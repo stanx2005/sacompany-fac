@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1773814975756,
+      "tag": "0000_fine_mordo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1773816307384,
+      "tag": "0001_clever_frog_thor",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1774529408044,
+      "tag": "0002_glossy_omega_flight",
+      "breakpoints": true
+    }
+  ]
+}

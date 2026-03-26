@@ -1,0 +1,14 @@
+import { db } from './index';
+import { users } from './schema';
+
+async function test() {
+  try {
+    console.log('Testing Turso connection...');
+    const result = await db.select().from(users).limit(1);
+    console.log('Connection successful! Found users:', result.length);
+  } catch (error) {
+    console.error('Connection failed:', error);
+  }
+}
+
+test();
