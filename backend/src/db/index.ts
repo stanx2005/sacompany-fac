@@ -7,7 +7,7 @@ dotenv.config();
 
 const client = createClient({
   url: process.env.DB_URL || 'file:local.db',
-  authToken: process.env.DB_AUTH_TOKEN,
+  authToken: process.env.DB_AUTH_TOKEN || '',
 });
 
 export const db = drizzle(client, { schema });

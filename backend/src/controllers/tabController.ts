@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { openTabs, clients, products, salesInvoices, invoiceItems } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -41,7 +41,7 @@ export const addToTab = async (req: Request, res: Response) => {
 export const deleteTabItem = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
-    await db.delete(openTabs).where(eq(openTabs.id, parseInt(id)));
+    await db.delete(openTabs).where(eq(openTabs.id, parseInt(id || '0')));
     res.json({ message: 'Article supprimé du carnet.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la suppression.', error });
@@ -50,6 +50,8 @@ export const deleteTabItem = async (req: Request, res: Response) => {
 
 export const closeTabsForClient = async (req: Request, res: Response) => {
   const { clientId } = req.params;
+  if (!clientId) return res.status(400).json({ message: 'ID client manquant.' });
+
   try {
     // 1. Fetch all open tab items for this client
     const items = await db.select({
@@ -71,9 +73,9 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
     let totalExclTax = 0;
     let totalTax = 0;
     const processedItems = items.map(item => {
-      const price = parseFloat(item.unitPrice || '0');
-      const taxRate = parseFloat(item.taxRate || '20');
-      const lineExclTax = item.quantity * price;
+      const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(String(item.unitPrice || '0'));
+      const taxRate = typeof item.taxRate === 'number' ? item.taxRate : parseFloat(String(item.taxRate || '20'));
+      const lineExclTax = (item.quantity || 0) * price;
       const lineTax = lineExclTax * (taxRate / 100);
       totalExclTax += lineExclTax;
       totalTax += lineTax;
@@ -98,6 +100,8 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
       status: 'pending'
     }).returning({ id: salesInvoices.id });
 
+    if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
+
     const invoiceNumber = `FACT-TAB-${invoiceResult.id + 99}`;
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
 
@@ -105,8 +109,8 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
     for (const item of processedItems) {
       await db.insert(invoiceItems).values({
         invoiceId: invoiceResult.id,
-        productId: item.productId,
-        quantity: item.quantity,
+        productId: item.productId as number,
+        quantity: item.quantity as number,
         unitPrice: item.unitPrice,
         taxRate: item.taxRate,
         totalLine: item.totalLine,
