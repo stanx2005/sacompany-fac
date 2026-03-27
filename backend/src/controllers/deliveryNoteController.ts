@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { deliveryNotes, deliveryNoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema';
+import { db } from '../db/index.js';
+import { deliveryNotes, deliveryNoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
 
 const safeId = (id: string | string[] | undefined): string => {
@@ -70,6 +70,7 @@ export const markAsDelivered = async (req: Request, res: Response) => {
 
     res.json({ message: 'Bon de livraison marqué comme livré et stock mis à jour.' });
   } catch (error) {
+    console.error('Delivered error:', error);
     res.status(500).json({ message: 'Erreur lors de la livraison.', error });
   }
 };
@@ -97,7 +98,7 @@ export const convertBLToInvoice = async (req: Request, res: Response) => {
       totalTax: Number(totalTax),
       totalInclTax: Number(bl.totalInclTax || 0),
       status: 'pending'
-    }).returning({ id: salesInvoices.id });
+    } as any).returning({ id: salesInvoices.id });
 
     if (!invoiceResult) throw new Error('Erreur facture.');
 
@@ -113,7 +114,7 @@ export const convertBLToInvoice = async (req: Request, res: Response) => {
         taxRate: Number(item.taxRate || 20),
         totalLine: Number(item.totalLine || 0),
         date: new Date().toISOString().split('T')[0] || ''
-      });
+      } as any);
     }
     
     await db.update(deliveryNotes).set({ status: 'invoiced' }).where(eq(deliveryNotes.id, parseInt(id)));
@@ -140,7 +141,7 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
       date: String(date || ''),
       totalInclTax: Number(totalInclTax),
       status: 'pending'
-    }).returning({ id: deliveryNotes.id });
+    } as any).returning({ id: deliveryNotes.id });
 
     if (!result) throw new Error('Erreur BL.');
 
@@ -155,7 +156,7 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
         unitPrice: Number(item.unitPrice || 0),
         taxRate: Number(item.taxRate || 20),
         totalLine: Number(item.totalLine || 0)
-      });
+      } as any);
     }
     res.status(201).json({ message: 'Bon de livraison créé.', id: result.id });
   } catch (error) {

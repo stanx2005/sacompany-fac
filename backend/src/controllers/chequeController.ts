@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { chequeRegistry, clients, suppliers } from '../db/schema';
+import { db } from '../db/index.js';
+import { chequeRegistry, clients, suppliers } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const safeId = (id: string | string[] | undefined): string => {

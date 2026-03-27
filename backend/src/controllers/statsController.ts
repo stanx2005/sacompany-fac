@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { salesInvoices, purchaseOrders, chequeRegistry, quotes } from '../db/schema';
+import { db } from '../db/index.js';
+import { salesInvoices, purchaseOrders, chequeRegistry, quotes } from '../db/schema.js';
 import { sql } from 'drizzle-orm';
 
 export const getStats = async (req: Request, res: Response) => {
@@ -55,8 +55,8 @@ export const getStats = async (req: Request, res: Response) => {
       pendingIncoming: Number(incomingCheques?.total || 0),
       pendingOutgoing: Number(outgoingCheques?.total || 0),
       totalQuotes: Number(quotesResult?.total || 0),
-      chartData: chartData.map(d => ({ ...d, sales: Number(d.sales) })),
-      purchaseChartData: purchaseChartData.map(d => ({ ...d, purchases: Number(d.purchases) }))
+      chartData: chartData.map((d: any) => ({ ...d, sales: Number(d.sales) })),
+      purchaseChartData: purchaseChartData.map((d: any) => ({ ...d, purchases: Number(d.purchases) }))
     });
   } catch (error) {
     console.error('Stats error:', error);

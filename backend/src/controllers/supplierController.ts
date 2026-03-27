@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { suppliers } from '../db/schema';
+import { db } from '../db/index.js';
+import { suppliers } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 export const getSuppliers = async (req: Request, res: Response) => {

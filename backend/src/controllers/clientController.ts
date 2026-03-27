@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { clients, suppliers } from '../db/schema';
+import { db } from '../db/index.js';
+import { clients, suppliers } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 export const getClients = async (req: Request, res: Response) => {
