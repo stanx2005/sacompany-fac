@@ -40,8 +40,10 @@ export const addToTab = async (req: Request, res: Response) => {
 
 export const deleteTabItem = async (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  
   try {
-    await db.delete(openTabs).where(eq(openTabs.id, parseInt(id || '0')));
+    await db.delete(openTabs).where(eq(openTabs.id, parseInt(id)));
     res.json({ message: 'Article supprimé du carnet.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la suppression.', error });

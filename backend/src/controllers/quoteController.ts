@@ -28,6 +28,8 @@ export const getQuotes = async (req: Request, res: Response) => {
 
 export const getQuoteItems = async (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  
   try {
     const items = await db.select({
       id: quoteItems.id,
@@ -40,7 +42,7 @@ export const getQuoteItems = async (req: Request, res: Response) => {
     })
     .from(quoteItems)
     .leftJoin(products, eq(quoteItems.productId, products.id))
-    .where(eq(quoteItems.quoteId, parseInt(id || '0')));
+    .where(eq(quoteItems.quoteId, parseInt(id)));
     res.json(items);
   } catch (error) {
     res.status(500).json({ message: 'Erreur items.', error });
@@ -96,6 +98,8 @@ export const updateQuote = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { clientId, date, items } = req.body;
   
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+
   try {
     let totalExclTax = 0;
     let totalTax = 0;
@@ -108,21 +112,19 @@ export const updateQuote = async (req: Request, res: Response) => {
     });
     const totalInclTax = totalExclTax + totalTax;
 
-    // 1. Update main quote record
     await db.update(quotes).set({
       clientId: parseInt(clientId),
       date: String(date),
       totalExclTax,
       totalTax,
       totalInclTax
-    }).where(eq(quotes.id, parseInt(id || '0')));
+    }).where(eq(quotes.id, parseInt(id)));
 
-    // 2. Delete existing items and re-insert (simpler than updating)
-    await db.delete(quoteItems).where(eq(quoteItems.quoteId, parseInt(id || '0')));
+    await db.delete(quoteItems).where(eq(quoteItems.quoteId, parseInt(id)));
     
     for (const item of processedItems) {
       await db.insert(quoteItems).values({
-        quoteId: parseInt(id || '0'),
+        quoteId: parseInt(id),
         productId: item.productId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -140,15 +142,17 @@ export const updateQuote = async (req: Request, res: Response) => {
 
 export const convertQuoteToInvoice = async (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+
   try {
-    const [quote] = await db.select().from(quotes).where(eq(quotes.id, parseInt(id || '0')));
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, parseInt(id)));
     if (!quote) return res.status(404).json({ message: 'Devis non trouvé.' });
 
-    const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, parseInt(id || '0')));
+    const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, parseInt(id)));
     
     const [invoiceResult] = await db.insert(salesInvoices).values({
       invoiceNumber: 'TEMP',
-      clientId: quote.clientId,
+      clientId: quote.clientId as number,
       date: new Date().toISOString().split('T')[0],
       totalExclTax: quote.totalExclTax,
       totalTax: quote.totalTax,
@@ -172,7 +176,7 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
       });
     }
     
-    await db.update(quotes).set({ status: 'invoiced' }).where(eq(quotes.id, parseInt(id || '0')));
+    await db.update(quotes).set({ status: 'invoiced' }).where(eq(quotes.id, parseInt(id)));
     
     res.json({ message: 'Devis converti en Facture avec succès.', invoiceId: invoiceResult.id });
   } catch (error) {
