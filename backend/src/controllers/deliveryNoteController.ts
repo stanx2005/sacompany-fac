@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { deliveryNotes, deliveryNoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
@@ -27,6 +27,7 @@ export const getDeliveryNotes = async (req: Request, res: Response) => {
 
 export const getDeliveryNoteItems = async (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
   try {
     const items = await db.select({
       id: deliveryNoteItems.id,
@@ -48,6 +49,7 @@ export const getDeliveryNoteItems = async (req: Request, res: Response) => {
 
 export const markAsDelivered = async (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
   try {
     // 1. Get BL items
     const items = await db.select().from(deliveryNoteItems).where(eq(deliveryNoteItems.deliveryNoteId, parseInt(id)));
@@ -56,7 +58,7 @@ export const markAsDelivered = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.update(products)
         .set({ stock: sql`stock - ${item.quantity}` })
-        .where(eq(products.id, item.productId));
+        .where(eq(products.id, item.productId as number));
     }
 
     // 3. Update status
@@ -73,21 +75,23 @@ export const markAsDelivered = async (req: Request, res: Response) => {
 
 export const convertBLToInvoice = async (req: Request, res: Response) => {
   const { id } = req.params;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
   try {
     const [bl] = await db.select().from(deliveryNotes).where(eq(deliveryNotes.id, parseInt(id)));
+    if (!bl) return res.status(404).json({ message: 'Bon de livraison non trouvé.' });
     const items = await db.select().from(deliveryNoteItems).where(eq(deliveryNoteItems.deliveryNoteId, parseInt(id)));
     
     let totalExclTax = 0;
     let totalTax = 0;
     for (const item of items) {
-      const lineExclTax = item.quantity * item.unitPrice;
+      const lineExclTax = (item.quantity as number) * (item.unitPrice as number);
       totalExclTax += lineExclTax;
-      totalTax += lineExclTax * (item.taxRate / 100);
+      totalTax += lineExclTax * ((item.taxRate as number) / 100);
     }
 
     const [invoiceResult] = await db.insert(salesInvoices).values({
       invoiceNumber: 'TEMP',
-      clientId: bl.clientId,
+      clientId: bl.clientId as number,
       date: new Date().toISOString().split('T')[0],
       totalExclTax,
       totalTax,
@@ -95,17 +99,19 @@ export const convertBLToInvoice = async (req: Request, res: Response) => {
       status: 'pending'
     }).returning({ id: salesInvoices.id });
 
+    if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
+
     const invoiceNumber = `FACT-CONV-${invoiceResult.id + 99}`;
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
 
     for (const item of items) {
       await db.insert(invoiceItems).values({
         invoiceId: invoiceResult.id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate,
-        totalLine: item.totalLine
+        productId: item.productId as number,
+        quantity: item.quantity as number,
+        unitPrice: item.unitPrice as number,
+        taxRate: item.taxRate as number,
+        totalLine: item.totalLine as number
       });
     }
     
@@ -129,11 +135,13 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
 
     const [result] = await db.insert(deliveryNotes).values({
       noteNumber: 'TEMP',
-      clientId,
-      date,
+      clientId: parseInt(clientId),
+      date: String(date),
       totalInclTax,
       status: 'pending'
     }).returning({ id: deliveryNotes.id });
+
+    if (!result) throw new Error('Erreur lors de la création du bon de livraison.');
 
     const noteNumber = `BL-${result.id + 99}`;
     await db.update(deliveryNotes).set({ noteNumber }).where(eq(deliveryNotes.id, result.id));
