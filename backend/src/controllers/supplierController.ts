@@ -23,7 +23,8 @@ export const createSupplier = async (req: Request, res: Response) => {
 };
 
 export const updateSupplier = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const { name, email, phone, address, taxNumber } = req.body;
   try {
     await db.update(suppliers)
@@ -36,7 +37,8 @@ export const updateSupplier = async (req: Request, res: Response) => {
 };
 
 export const deleteSupplier = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   try {
     await db.delete(suppliers).where(eq(suppliers.id, parseInt(id || '0')));
     res.json({ message: 'Fournisseur supprimé avec succès.' });

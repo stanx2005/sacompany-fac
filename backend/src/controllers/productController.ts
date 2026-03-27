@@ -41,7 +41,8 @@ export const bulkCreateProducts = async (req: Request, res: Response) => {
 };
 
 export const updateProduct = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const { name, description, price, taxRate, stock } = req.body;
   try {
     await db.update(products)
@@ -54,7 +55,8 @@ export const updateProduct = async (req: Request, res: Response) => {
 };
 
 export const deleteProduct = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   try {
     await db.delete(products).where(eq(products.id, parseInt(id || '0')));
     res.json({ message: 'Produit supprimé avec succès.' });

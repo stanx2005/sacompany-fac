@@ -31,7 +31,13 @@ export const getOpenTabs = async (req: Request, res: Response) => {
 export const addToTab = async (req: Request, res: Response) => {
   const { clientId, productId, quantity, date } = req.body;
   try {
-    await db.insert(openTabs).values({ clientId, productId, quantity, date, isClosed: 0 });
+    await db.insert(openTabs).values({ 
+      clientId: Number(clientId), 
+      productId: Number(productId), 
+      quantity: Number(quantity), 
+      date: String(date), 
+      isClosed: 0 
+    });
     res.status(201).json({ message: 'Ajouté au carnet avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de l\'ajout au carnet.', error });
@@ -40,10 +46,11 @@ export const addToTab = async (req: Request, res: Response) => {
 
 export const deleteTabItem = async (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const tabId = Array.isArray(id) ? id[0] : id;
+  if (!tabId) return res.status(400).json({ message: 'ID manquant.' });
   
   try {
-    await db.delete(openTabs).where(eq(openTabs.id, parseInt(id)));
+    await db.delete(openTabs).where(eq(openTabs.id, parseInt(tabId)));
     res.json({ message: 'Article supprimé du carnet.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la suppression.', error });
@@ -51,11 +58,11 @@ export const deleteTabItem = async (req: Request, res: Response) => {
 };
 
 export const closeTabsForClient = async (req: Request, res: Response) => {
-  const { clientId } = req.params;
+  const { clientId: rawClientId } = req.params;
+  const clientId = Array.isArray(rawClientId) ? rawClientId[0] : rawClientId;
   if (!clientId) return res.status(400).json({ message: 'ID client manquant.' });
 
   try {
-    // 1. Fetch all open tab items for this client
     const items = await db.select({
       productId: openTabs.productId,
       quantity: openTabs.quantity,
@@ -71,27 +78,27 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Aucun article ouvert pour ce client.' });
     }
 
-    // 2. Calculate totals
     let totalExclTax = 0;
     let totalTax = 0;
     const processedItems = items.map(item => {
-      const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(String(item.unitPrice || '0'));
-      const taxRate = typeof item.taxRate === 'number' ? item.taxRate : parseFloat(String(item.taxRate || '20'));
-      const lineExclTax = (item.quantity || 0) * price;
+      const price = Number(item.unitPrice || 0);
+      const taxRate = Number(item.taxRate || 20);
+      const qty = Number(item.quantity || 0);
+      const lineExclTax = qty * price;
       const lineTax = lineExclTax * (taxRate / 100);
       totalExclTax += lineExclTax;
       totalTax += lineTax;
       return {
-        ...item,
+        productId: Number(item.productId),
+        quantity: qty,
         unitPrice: price,
         taxRate: taxRate,
         totalLine: lineExclTax + lineTax,
-        date: item.date // Preserve the date from the tab
+        date: String(item.date || '')
       };
     });
     const totalInclTax = totalExclTax + totalTax;
 
-    // 3. Create the Invoice
     const [invoiceResult] = await db.insert(salesInvoices).values({
       invoiceNumber: 'TEMP',
       clientId: parseInt(clientId),
@@ -107,20 +114,18 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
     const invoiceNumber = `FACT-TAB-${invoiceResult.id + 99}`;
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
 
-    // 4. Insert Invoice Items
     for (const item of processedItems) {
       await db.insert(invoiceItems).values({
         invoiceId: invoiceResult.id,
-        productId: item.productId as number,
-        quantity: item.quantity as number,
+        productId: item.productId,
+        quantity: item.quantity,
         unitPrice: item.unitPrice,
         taxRate: item.taxRate,
         totalLine: item.totalLine,
-        date: item.date // Store the date in invoice_items
+        date: item.date
       });
     }
 
-    // 5. Mark tabs as closed
     await db.update(openTabs)
       .set({ isClosed: 1 })
       .where(and(eq(openTabs.clientId, parseInt(clientId)), eq(openTabs.isClosed, 0)));

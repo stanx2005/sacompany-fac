@@ -41,7 +41,8 @@ export const bulkCreateClients = async (req: Request, res: Response) => {
 };
 
 export const updateClient = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const { name, email, phone, address, taxNumber } = req.body;
   try {
     await db.update(clients)
@@ -54,7 +55,8 @@ export const updateClient = async (req: Request, res: Response) => {
 };
 
 export const deleteClient = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   try {
     await db.delete(clients).where(eq(clients.id, parseInt(id || '0')));
     res.json({ message: 'Client supprimé avec succès.' });
