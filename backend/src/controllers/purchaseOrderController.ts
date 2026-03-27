@@ -3,6 +3,11 @@ import { db } from '../db';
 import { purchaseOrders, purchaseOrderItems, suppliers, products, deliveryNotes, deliveryNoteItems } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
+const safeId = (id: string | string[] | undefined): string => {
+  if (Array.isArray(id)) return id[0] || '0';
+  return id || '0';
+};
+
 export const getPurchaseOrders = async (req: Request, res: Response) => {
   try {
     const orders = await db.select({
@@ -26,9 +31,7 @@ export const getPurchaseOrders = async (req: Request, res: Response) => {
 };
 
 export const getPurchaseOrderItems = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const id = safeId(req.params.id);
   try {
     const items = await db.select({
       id: purchaseOrderItems.id,
@@ -49,11 +52,9 @@ export const getPurchaseOrderItems = async (req: Request, res: Response) => {
 };
 
 export const convertBCToBL = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  const id = safeId(req.params.id);
   const { clientId } = req.body;
 
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
   if (!clientId) {
     return res.status(400).json({ message: 'Un client est requis pour cette conversion.' });
   }
@@ -65,7 +66,7 @@ export const convertBCToBL = async (req: Request, res: Response) => {
     const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
     
     const [blResult] = await db.insert(deliveryNotes).values({
-      noteNumber: 'TEMP-' + Date.now(),
+      noteNumber: 'TEMP-BL-' + Date.now(),
       clientId: Number(clientId),
       date: new Date().toISOString().split('T')[0],
       totalInclTax: Number(order.totalInclTax || 0),
@@ -113,8 +114,8 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
     });
 
     const [result] = await db.insert(purchaseOrders).values({
-      orderNumber: 'TEMP-' + Date.now(),
-      supplierId: parseInt(String(supplierId)),
+      orderNumber: 'TEMP-BC-' + Date.now(),
+      supplierId: Number(supplierId),
       date: String(date),
       totalInclTax: Number(totalInclTax),
       status: 'pending'

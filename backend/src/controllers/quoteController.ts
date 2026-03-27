@@ -3,6 +3,11 @@ import { db } from '../db';
 import { quotes, quoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
+const safeId = (id: string | string[] | undefined): string => {
+  if (Array.isArray(id)) return id[0] || '0';
+  return id || '0';
+};
+
 export const getQuotes = async (req: Request, res: Response) => {
   try {
     const allQuotes = await db.select({
@@ -27,10 +32,7 @@ export const getQuotes = async (req: Request, res: Response) => {
 };
 
 export const getQuoteItems = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
-  
+  const id = safeId(req.params.id);
   try {
     const items = await db.select({
       id: quoteItems.id,
@@ -105,12 +107,9 @@ export const createQuote = async (req: Request, res: Response) => {
 };
 
 export const updateQuote = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  const id = safeId(req.params.id);
   const { clientId, date, items } = req.body;
   
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
-
   try {
     let totalExclTax = 0;
     let totalTax = 0;
@@ -161,9 +160,7 @@ export const updateQuote = async (req: Request, res: Response) => {
 };
 
 export const convertQuoteToInvoice = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const id = safeId(req.params.id);
 
   try {
     const [quote] = await db.select().from(quotes).where(eq(quotes.id, parseInt(id)));
