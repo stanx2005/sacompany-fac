@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { salesInvoices, invoiceItems, clients, products, deliveryNotes, deliveryNoteItems, purchaseOrders, purchaseOrderItems } from '../db/schema';
+import { db } from '../db/index.js';
+import { salesInvoices, invoiceItems, clients, products, deliveryNotes, deliveryNoteItems, purchaseOrders, purchaseOrderItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const safeId = (id: string | string[] | undefined): string => {
@@ -67,7 +67,7 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
       date: new Date().toISOString().split('T')[0] || '',
       totalInclTax: Number(invoice.totalInclTax || 0),
       status: 'pending'
-    }).returning({ id: deliveryNotes.id });
+    } as any).returning({ id: deliveryNotes.id });
 
     if (!blResult) throw new Error('Erreur BL.');
 
@@ -82,7 +82,7 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
         unitPrice: Number(item.unitPrice || 0),
         taxRate: Number(item.taxRate || 20),
         totalLine: Number(item.totalLine || 0)
-      });
+      } as any);
     }
     res.json({ message: 'Facture convertie en Bon de Livraison avec succès.', blId: blResult.id });
   } catch (error) {
@@ -109,7 +109,7 @@ export const convertInvoiceToBC = async (req: Request, res: Response) => {
       date: new Date().toISOString().split('T')[0] || '',
       totalInclTax: Number(invoice.totalInclTax || 0),
       status: 'pending'
-    }).returning({ id: purchaseOrders.id });
+    } as any).returning({ id: purchaseOrders.id });
 
     if (!bcResult) throw new Error('Erreur BC.');
 
@@ -124,7 +124,7 @@ export const convertInvoiceToBC = async (req: Request, res: Response) => {
         unitPrice: Number(item.unitPrice || 0),
         taxRate: Number(item.taxRate || 20),
         totalLine: Number(item.totalLine || 0)
-      });
+      } as any);
     }
     res.json({ message: 'Facture convertie en Bon de Commande avec succès.', bcId: bcResult.id });
   } catch (error) {
@@ -164,7 +164,7 @@ export const createInvoice = async (req: Request, res: Response) => {
       totalTax: Number(totalTax),
       totalInclTax: Number(totalInclTax),
       status: 'pending'
-    }).returning({ id: salesInvoices.id });
+    } as any).returning({ id: salesInvoices.id });
 
     if (!result) throw new Error('Erreur facture.');
 
@@ -180,7 +180,7 @@ export const createInvoice = async (req: Request, res: Response) => {
         taxRate: Number(item.taxRate || 20),
         totalLine: Number(item.totalLine || 0),
         date: item.date
-      });
+      } as any);
     }
     res.status(201).json({ message: 'Facture créée.', id: result.id });
   } catch (error) {

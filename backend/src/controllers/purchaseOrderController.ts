@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { purchaseOrders, purchaseOrderItems, suppliers, products, deliveryNotes, deliveryNoteItems } from '../db/schema';
+import { db } from '../db/index.js';
+import { purchaseOrders, purchaseOrderItems, suppliers, products, deliveryNotes, deliveryNoteItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const safeId = (id: string | string[] | undefined): string => {
@@ -65,7 +65,6 @@ export const convertBCToBL = async (req: Request, res: Response) => {
 
     const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
     
-    // Create BL
     const [blResult] = await db.insert(deliveryNotes).values({
       noteNumber: 'TEMP-BL-' + Date.now(),
       clientId: Number(clientId),
@@ -82,11 +81,11 @@ export const convertBCToBL = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(deliveryNoteItems).values({
         deliveryNoteId: blResult.id,
-        productId: Number(item.productId),
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-        taxRate: Number(item.taxRate),
-        totalLine: Number(item.totalLine)
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0)
       } as any);
     }
     res.json({ message: 'Bon de Commande converti en Bon de Livraison avec succès.', blId: blResult.id });
@@ -116,7 +115,7 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
 
     const [result] = await db.insert(purchaseOrders).values({
       orderNumber: 'TEMP-BC-' + Date.now(),
-      supplierId: Number(supplierId),
+      supplierId: Number(supplierId || 0),
       date: String(date || new Date().toISOString().split('T')[0]),
       totalInclTax: Number(totalInclTax),
       status: 'pending'

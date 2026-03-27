@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { quotes, quoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema';
+import { db } from '../db/index.js';
+import { quotes, quoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const safeId = (id: string | string[] | undefined): string => {
@@ -77,7 +77,7 @@ export const createQuote = async (req: Request, res: Response) => {
 
     const [result] = await db.insert(quotes).values({
       quoteNumber: 'TEMP-' + Date.now(),
-      clientId: Number(clientId),
+      clientId: Number(clientId || 0),
       date: String(date || new Date().toISOString().split('T')[0]),
       totalExclTax: Number(totalExclTax),
       totalTax: Number(totalTax),
@@ -93,11 +93,11 @@ export const createQuote = async (req: Request, res: Response) => {
     for (const item of processedItems) {
       await db.insert(quoteItems).values({
         quoteId: result.id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate,
-        totalLine: item.totalLine
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0)
       } as any);
     }
     res.status(201).json({ message: 'Devis créé.', id: result.id });
@@ -132,7 +132,7 @@ export const updateQuote = async (req: Request, res: Response) => {
     const totalInclTax = totalExclTax + totalTax;
 
     await db.update(quotes).set({
-      clientId: Number(clientId),
+      clientId: Number(clientId || 0),
       date: String(date || new Date().toISOString().split('T')[0]),
       totalExclTax: Number(totalExclTax),
       totalTax: Number(totalTax),
@@ -144,11 +144,11 @@ export const updateQuote = async (req: Request, res: Response) => {
     for (const item of processedItems) {
       await db.insert(quoteItems).values({
         quoteId: parseInt(id),
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate,
-        totalLine: item.totalLine
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0)
       } as any);
     }
 
@@ -170,11 +170,11 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
     
     const [invoiceResult] = await db.insert(salesInvoices).values({
       invoiceNumber: 'TEMP-' + Date.now(),
-      clientId: Number(quote.clientId),
+      clientId: Number(quote.clientId || 0),
       date: new Date().toISOString().split('T')[0],
-      totalExclTax: Number(quote.totalExclTax),
-      totalTax: Number(quote.totalTax),
-      totalInclTax: Number(quote.totalInclTax),
+      totalExclTax: Number(quote.totalExclTax || 0),
+      totalTax: Number(quote.totalTax || 0),
+      totalInclTax: Number(quote.totalInclTax || 0),
       status: 'pending'
     } as any).returning({ id: salesInvoices.id });
 
@@ -186,11 +186,11 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(invoiceItems).values({
         invoiceId: invoiceResult.id,
-        productId: Number(item.productId),
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-        taxRate: Number(item.taxRate),
-        totalLine: Number(item.totalLine),
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0),
         date: new Date().toISOString().split('T')[0]
       } as any);
     }

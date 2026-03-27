@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { db } from '../db';
-import { openTabs, clients, products, salesInvoices, invoiceItems } from '../db/schema';
+import { db } from '../db/index.js';
+import { openTabs, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 
 export const getOpenTabs = async (req: Request, res: Response) => {
