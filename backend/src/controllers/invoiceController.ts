@@ -27,7 +27,8 @@ export const getInvoices = async (req: Request, res: Response) => {
 };
 
 export const getInvoiceItems = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   if (!id) return res.status(400).json({ message: 'ID manquant.' });
   try {
     const items = await db.select({
@@ -51,7 +52,8 @@ export const getInvoiceItems = async (req: Request, res: Response) => {
 };
 
 export const convertInvoiceToBL = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   if (!id) return res.status(400).json({ message: 'ID manquant.' });
   try {
     const [invoice] = await db.select().from(salesInvoices).where(eq(salesInvoices.id, parseInt(id)));
@@ -60,9 +62,9 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
     
     const [blResult] = await db.insert(deliveryNotes).values({
       noteNumber: 'TEMP',
-      clientId: invoice.clientId as number,
+      clientId: Number(invoice.clientId),
       date: new Date().toISOString().split('T')[0],
-      totalInclTax: invoice.totalInclTax,
+      totalInclTax: Number(invoice.totalInclTax),
       status: 'pending'
     }).returning({ id: deliveryNotes.id });
 
@@ -74,11 +76,11 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(deliveryNoteItems).values({
         deliveryNoteId: blResult.id,
-        productId: item.productId as number,
-        quantity: item.quantity as number,
-        unitPrice: item.unitPrice as number,
-        taxRate: item.taxRate as number,
-        totalLine: item.totalLine as number
+        productId: Number(item.productId),
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+        taxRate: Number(item.taxRate),
+        totalLine: Number(item.totalLine)
       });
     }
     res.json({ message: 'Facture convertie en Bon de Livraison avec succès.', blId: blResult.id });
@@ -88,7 +90,8 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
 };
 
 export const convertInvoiceToBC = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const { supplierId } = req.body;
 
   if (!id) return res.status(400).json({ message: 'ID facture manquant.' });
@@ -103,9 +106,9 @@ export const convertInvoiceToBC = async (req: Request, res: Response) => {
     
     const [bcResult] = await db.insert(purchaseOrders).values({
       orderNumber: 'TEMP',
-      supplierId: parseInt(supplierId),
+      supplierId: parseInt(String(supplierId)),
       date: new Date().toISOString().split('T')[0],
-      totalInclTax: invoice.totalInclTax,
+      totalInclTax: Number(invoice.totalInclTax),
       status: 'pending'
     }).returning({ id: purchaseOrders.id });
 
@@ -117,11 +120,11 @@ export const convertInvoiceToBC = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(purchaseOrderItems).values({
         purchaseOrderId: bcResult.id,
-        productId: item.productId as number,
-        quantity: item.quantity as number,
-        unitPrice: item.unitPrice as number,
-        taxRate: item.taxRate as number,
-        totalLine: item.totalLine as number
+        productId: Number(item.productId),
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+        taxRate: Number(item.taxRate),
+        totalLine: Number(item.totalLine)
       });
     }
     res.json({ message: 'Facture convertie en Bon de Commande avec succès.', bcId: bcResult.id });
@@ -136,17 +139,27 @@ export const createInvoice = async (req: Request, res: Response) => {
     let totalExclTax = 0;
     let totalTax = 0;
     const processedItems = items.map((item: any) => {
-      const lineExclTax = item.quantity * item.unitPrice;
-      const lineTax = lineExclTax * (item.taxRate / 100);
+      const qty = Number(item.quantity || 0);
+      const price = Number(item.unitPrice || 0);
+      const tax = Number(item.taxRate || 20);
+      const lineExclTax = qty * price;
+      const lineTax = lineExclTax * (tax / 100);
       totalExclTax += lineExclTax;
       totalTax += lineTax;
-      return { ...item, totalLine: lineExclTax + lineTax };
+      return { 
+        productId: Number(item.productId),
+        quantity: qty,
+        unitPrice: price,
+        taxRate: tax,
+        totalLine: lineExclTax + lineTax,
+        date: item.date ? String(item.date) : null
+      };
     });
     const totalInclTax = totalExclTax + totalTax;
 
     const [result] = await db.insert(salesInvoices).values({
       invoiceNumber: 'TEMP',
-      clientId: parseInt(clientId),
+      clientId: parseInt(String(clientId)),
       date: String(date),
       totalExclTax,
       totalTax,
@@ -167,7 +180,7 @@ export const createInvoice = async (req: Request, res: Response) => {
         unitPrice: item.unitPrice,
         taxRate: item.taxRate,
         totalLine: item.totalLine,
-        date: item.date || null
+        date: item.date
       });
     }
     res.status(201).json({ message: 'Facture créée.', id: result.id });
