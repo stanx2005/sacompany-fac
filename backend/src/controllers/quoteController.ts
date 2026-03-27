@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { quotes, quoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -40,7 +40,7 @@ export const getQuoteItems = async (req: Request, res: Response) => {
     })
     .from(quoteItems)
     .leftJoin(products, eq(quoteItems.productId, products.id))
-    .where(eq(quoteItems.quoteId, parseInt(id)));
+    .where(eq(quoteItems.quoteId, parseInt(id || '0')));
     res.json(items);
   } catch (error) {
     res.status(500).json({ message: 'Erreur items.', error });
@@ -63,13 +63,15 @@ export const createQuote = async (req: Request, res: Response) => {
 
     const [result] = await db.insert(quotes).values({
       quoteNumber: 'TEMP',
-      clientId,
-      date,
+      clientId: parseInt(clientId),
+      date: String(date),
       totalExclTax,
       totalTax,
       totalInclTax,
       status: 'pending'
     }).returning({ id: quotes.id });
+
+    if (!result) throw new Error('Erreur lors de la création du devis.');
 
     const quoteNumber = `DEV-${result.id + 99}`;
     await db.update(quotes).set({ quoteNumber }).where(eq(quotes.id, result.id));
@@ -108,19 +110,19 @@ export const updateQuote = async (req: Request, res: Response) => {
 
     // 1. Update main quote record
     await db.update(quotes).set({
-      clientId,
-      date,
+      clientId: parseInt(clientId),
+      date: String(date),
       totalExclTax,
       totalTax,
       totalInclTax
-    }).where(eq(quotes.id, parseInt(id)));
+    }).where(eq(quotes.id, parseInt(id || '0')));
 
     // 2. Delete existing items and re-insert (simpler than updating)
-    await db.delete(quoteItems).where(eq(quoteItems.quoteId, parseInt(id)));
+    await db.delete(quoteItems).where(eq(quoteItems.quoteId, parseInt(id || '0')));
     
     for (const item of processedItems) {
       await db.insert(quoteItems).values({
-        quoteId: parseInt(id),
+        quoteId: parseInt(id || '0'),
         productId: item.productId,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -139,8 +141,10 @@ export const updateQuote = async (req: Request, res: Response) => {
 export const convertQuoteToInvoice = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
-    const [quote] = await db.select().from(quotes).where(eq(quotes.id, parseInt(id)));
-    const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, parseInt(id)));
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, parseInt(id || '0')));
+    if (!quote) return res.status(404).json({ message: 'Devis non trouvé.' });
+
+    const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, parseInt(id || '0')));
     
     const [invoiceResult] = await db.insert(salesInvoices).values({
       invoiceNumber: 'TEMP',
@@ -152,21 +156,23 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
       status: 'pending'
     }).returning({ id: salesInvoices.id });
 
+    if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
+
     const invoiceNumber = `FACT-DEV-${invoiceResult.id + 99}`;
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
 
     for (const item of items) {
       await db.insert(invoiceItems).values({
         invoiceId: invoiceResult.id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate,
-        totalLine: item.totalLine
+        productId: item.productId as number,
+        quantity: item.quantity as number,
+        unitPrice: item.unitPrice as number,
+        taxRate: item.taxRate as number,
+        totalLine: item.totalLine as number
       });
     }
     
-    await db.update(quotes).set({ status: 'invoiced' }).where(eq(quotes.id, parseInt(id)));
+    await db.update(quotes).set({ status: 'invoiced' }).where(eq(quotes.id, parseInt(id || '0')));
     
     res.json({ message: 'Devis converti en Facture avec succès.', invoiceId: invoiceResult.id });
   } catch (error) {

@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { products } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -27,11 +27,11 @@ export const bulkCreateProducts = async (req: Request, res: Response) => {
   try {
     for (const p of productsList) {
       await db.insert(products).values({
-        name: p.Designation,
-        description: p.Description || '',
-        price: parseFloat(p.PrixHT),
-        taxRate: parseFloat(p.TVA || '20'),
-        stock: parseInt(p.Stock || '0')
+        name: String(p.Designation || ''),
+        description: String(p.Description || ''),
+        price: parseFloat(String(p.PrixHT || '0')),
+        taxRate: parseFloat(String(p.TVA || '20')),
+        stock: parseInt(String(p.Stock || '0'))
       });
     }
     res.status(201).json({ message: `${productsList.length} produits importés avec succès.` });
@@ -46,7 +46,7 @@ export const updateProduct = async (req: Request, res: Response) => {
   try {
     await db.update(products)
       .set({ name, description, price, taxRate, stock })
-      .where(eq(products.id, parseInt(id)));
+      .where(eq(products.id, parseInt(id || '0')));
     res.json({ message: 'Produit mis à jour avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la mise à jour du produit.', error });
@@ -56,7 +56,7 @@ export const updateProduct = async (req: Request, res: Response) => {
 export const deleteProduct = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
-    await db.delete(products).where(eq(products.id, parseInt(id)));
+    await db.delete(products).where(eq(products.id, parseInt(id || '0')));
     res.json({ message: 'Produit supprimé avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la suppression du produit.', error });

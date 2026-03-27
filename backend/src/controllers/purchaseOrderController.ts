@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { purchaseOrders, purchaseOrderItems, suppliers, products, deliveryNotes, deliveryNoteItems } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -39,7 +39,7 @@ export const getPurchaseOrderItems = async (req: Request, res: Response) => {
     })
     .from(purchaseOrderItems)
     .leftJoin(products, eq(purchaseOrderItems.productId, products.id))
-    .where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
+    .where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id || '0')));
     res.json(items);
   } catch (error) {
     res.status(500).json({ message: 'Erreur items.', error });
@@ -55,8 +55,10 @@ export const convertBCToBL = async (req: Request, res: Response) => {
   }
 
   try {
-    const [order] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, parseInt(id)));
-    const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
+    const [order] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, parseInt(id || '0')));
+    if (!order) return res.status(404).json({ message: 'Bon de commande non trouvé.' });
+
+    const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id || '0')));
     
     const [blResult] = await db.insert(deliveryNotes).values({
       noteNumber: 'TEMP',
@@ -66,17 +68,19 @@ export const convertBCToBL = async (req: Request, res: Response) => {
       status: 'pending'
     }).returning({ id: deliveryNotes.id });
 
+    if (!blResult) throw new Error('Erreur lors de la création du bon de livraison.');
+
     const noteNumber = `BL-CONV-${blResult.id + 99}`;
     await db.update(deliveryNotes).set({ noteNumber }).where(eq(deliveryNotes.id, blResult.id));
 
     for (const item of items) {
       await db.insert(deliveryNoteItems).values({
         deliveryNoteId: blResult.id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate,
-        totalLine: item.totalLine
+        productId: item.productId as number,
+        quantity: item.quantity as number,
+        unitPrice: item.unitPrice as number,
+        taxRate: item.taxRate as number,
+        totalLine: item.totalLine as number
       });
     }
     res.json({ message: 'Bon de Commande converti en Bon de Livraison avec succès.', blId: blResult.id });
@@ -97,11 +101,13 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
 
     const [result] = await db.insert(purchaseOrders).values({
       orderNumber: 'TEMP',
-      supplierId,
-      date,
+      supplierId: parseInt(supplierId),
+      date: String(date),
       totalInclTax,
       status: 'pending'
     }).returning({ id: purchaseOrders.id });
+
+    if (!result) throw new Error('Erreur lors de la création du bon de commande.');
 
     const orderNumber = `BC-${result.id + 99}`;
     await db.update(purchaseOrders).set({ orderNumber }).where(eq(purchaseOrders.id, result.id));

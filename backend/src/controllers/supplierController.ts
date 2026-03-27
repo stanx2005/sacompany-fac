@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { suppliers } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -28,7 +28,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
   try {
     await db.update(suppliers)
       .set({ name, email, phone, address, taxNumber })
-      .where(eq(suppliers.id, parseInt(id)));
+      .where(eq(suppliers.id, parseInt(id || '0')));
     res.json({ message: 'Fournisseur mis à jour avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la mise à jour du fournisseur.', error });
@@ -38,7 +38,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
 export const deleteSupplier = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
-    await db.delete(suppliers).where(eq(suppliers.id, parseInt(id)));
+    await db.delete(suppliers).where(eq(suppliers.id, parseInt(id || '0')));
     res.json({ message: 'Fournisseur supprimé avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la suppression du fournisseur.', error });

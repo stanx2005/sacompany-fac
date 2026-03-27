@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { salesInvoices, purchaseOrders, chequeRegistry, quotes } from '../db/schema';
 import { sql } from 'drizzle-orm';
