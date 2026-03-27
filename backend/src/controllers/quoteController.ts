@@ -75,11 +75,11 @@ export const createQuote = async (req: Request, res: Response) => {
 
     const [result] = await db.insert(quotes).values({
       quoteNumber: 'TEMP',
-      clientId: parseInt(String(clientId)),
+      clientId: Number(clientId),
       date: String(date),
-      totalExclTax,
-      totalTax,
-      totalInclTax,
+      totalExclTax: Number(totalExclTax),
+      totalTax: Number(totalTax),
+      totalInclTax: Number(totalInclTax),
       status: 'pending'
     }).returning({ id: quotes.id });
 
@@ -133,11 +133,11 @@ export const updateQuote = async (req: Request, res: Response) => {
     const totalInclTax = totalExclTax + totalTax;
 
     await db.update(quotes).set({
-      clientId: parseInt(String(clientId)),
+      clientId: Number(clientId),
       date: String(date),
-      totalExclTax,
-      totalTax,
-      totalInclTax
+      totalExclTax: Number(totalExclTax),
+      totalTax: Number(totalTax),
+      totalInclTax: Number(totalInclTax)
     }).where(eq(quotes.id, parseInt(id)));
 
     await db.delete(quoteItems).where(eq(quoteItems.quoteId, parseInt(id)));
