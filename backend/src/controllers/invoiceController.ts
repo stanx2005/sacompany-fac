@@ -61,7 +61,7 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
     const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, parseInt(id)));
     
     const [blResult] = await db.insert(deliveryNotes).values({
-      noteNumber: 'TEMP-' + Date.now(),
+      noteNumber: 'TEMP-BL-' + Date.now(),
       clientId: Number(invoice.clientId),
       date: new Date().toISOString().split('T')[0],
       totalInclTax: Number(invoice.totalInclTax),
@@ -105,7 +105,7 @@ export const convertInvoiceToBC = async (req: Request, res: Response) => {
     const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, parseInt(id)));
     
     const [bcResult] = await db.insert(purchaseOrders).values({
-      orderNumber: 'TEMP-' + Date.now(),
+      orderNumber: 'TEMP-BC-' + Date.now(),
       supplierId: parseInt(String(supplierId)),
       date: new Date().toISOString().split('T')[0],
       totalInclTax: Number(invoice.totalInclTax),
@@ -158,7 +158,7 @@ export const createInvoice = async (req: Request, res: Response) => {
     const totalInclTax = totalExclTax + totalTax;
 
     const [result] = await db.insert(salesInvoices).values({
-      invoiceNumber: 'TEMP-' + Date.now(),
+      invoiceNumber: 'TEMP-INV-' + Date.now(),
       clientId: parseInt(String(clientId)),
       date: String(date),
       totalExclTax: Number(totalExclTax),

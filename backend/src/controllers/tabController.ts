@@ -100,7 +100,7 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
     const totalInclTax = totalExclTax + totalTax;
 
     const [invoiceResult] = await db.insert(salesInvoices).values({
-      invoiceNumber: 'TEMP-' + Date.now(),
+      invoiceNumber: 'TEMP-TAB-' + Date.now(),
       clientId: parseInt(clientId),
       date: new Date().toISOString().split('T')[0],
       totalExclTax: Number(totalExclTax),
