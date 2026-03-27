@@ -65,13 +65,14 @@ export const convertBCToBL = async (req: Request, res: Response) => {
 
     const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
     
+    // Create BL
     const [blResult] = await db.insert(deliveryNotes).values({
       noteNumber: 'TEMP-BL-' + Date.now(),
       clientId: Number(clientId),
       date: new Date().toISOString().split('T')[0],
       totalInclTax: Number(order.totalInclTax || 0),
       status: 'pending'
-    }).returning({ id: deliveryNotes.id });
+    } as any).returning({ id: deliveryNotes.id });
 
     if (!blResult) throw new Error('Erreur lors de la création du bon de livraison.');
 
@@ -86,7 +87,7 @@ export const convertBCToBL = async (req: Request, res: Response) => {
         unitPrice: Number(item.unitPrice),
         taxRate: Number(item.taxRate),
         totalLine: Number(item.totalLine)
-      });
+      } as any);
     }
     res.json({ message: 'Bon de Commande converti en Bon de Livraison avec succès.', blId: blResult.id });
   } catch (error) {
@@ -116,10 +117,10 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
     const [result] = await db.insert(purchaseOrders).values({
       orderNumber: 'TEMP-BC-' + Date.now(),
       supplierId: Number(supplierId),
-      date: String(date),
+      date: String(date || new Date().toISOString().split('T')[0]),
       totalInclTax: Number(totalInclTax),
       status: 'pending'
-    }).returning({ id: purchaseOrders.id });
+    } as any).returning({ id: purchaseOrders.id });
 
     if (!result) throw new Error('Erreur lors de la création du bon de commande.');
 
@@ -134,7 +135,7 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
         unitPrice: item.unitPrice,
         taxRate: item.taxRate,
         totalLine: item.totalLine
-      });
+      } as any);
     }
     res.status(201).json({ message: 'Bon de commande créé.', id: result.id });
   } catch (error) {

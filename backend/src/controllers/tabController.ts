@@ -35,9 +35,9 @@ export const addToTab = async (req: Request, res: Response) => {
       clientId: Number(clientId), 
       productId: Number(productId), 
       quantity: Number(quantity), 
-      date: String(date), 
+      date: String(date || new Date().toISOString().split('T')[0]), 
       isClosed: 0 
-    });
+    } as any);
     res.status(201).json({ message: 'Ajouté au carnet avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de l\'ajout au carnet.', error });
@@ -107,7 +107,7 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
       totalTax: Number(totalTax),
       totalInclTax: Number(totalInclTax),
       status: 'pending'
-    }).returning({ id: salesInvoices.id });
+    } as any).returning({ id: salesInvoices.id });
 
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
@@ -123,7 +123,7 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
         taxRate: item.taxRate,
         totalLine: item.totalLine,
         date: item.date
-      });
+      } as any);
     }
 
     await db.update(openTabs)

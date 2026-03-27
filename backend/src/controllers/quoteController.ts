@@ -78,12 +78,12 @@ export const createQuote = async (req: Request, res: Response) => {
     const [result] = await db.insert(quotes).values({
       quoteNumber: 'TEMP-' + Date.now(),
       clientId: Number(clientId),
-      date: String(date),
+      date: String(date || new Date().toISOString().split('T')[0]),
       totalExclTax: Number(totalExclTax),
       totalTax: Number(totalTax),
       totalInclTax: Number(totalInclTax),
       status: 'pending'
-    }).returning({ id: quotes.id });
+    } as any).returning({ id: quotes.id });
 
     if (!result) throw new Error('Erreur lors de la création du devis.');
 
@@ -98,7 +98,7 @@ export const createQuote = async (req: Request, res: Response) => {
         unitPrice: item.unitPrice,
         taxRate: item.taxRate,
         totalLine: item.totalLine
-      });
+      } as any);
     }
     res.status(201).json({ message: 'Devis créé.', id: result.id });
   } catch (error) {
@@ -133,7 +133,7 @@ export const updateQuote = async (req: Request, res: Response) => {
 
     await db.update(quotes).set({
       clientId: Number(clientId),
-      date: String(date),
+      date: String(date || new Date().toISOString().split('T')[0]),
       totalExclTax: Number(totalExclTax),
       totalTax: Number(totalTax),
       totalInclTax: Number(totalInclTax)
@@ -149,7 +149,7 @@ export const updateQuote = async (req: Request, res: Response) => {
         unitPrice: item.unitPrice,
         taxRate: item.taxRate,
         totalLine: item.totalLine
-      });
+      } as any);
     }
 
     res.json({ message: 'Devis mis à jour avec succès.' });
@@ -176,7 +176,7 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
       totalTax: Number(quote.totalTax),
       totalInclTax: Number(quote.totalInclTax),
       status: 'pending'
-    }).returning({ id: salesInvoices.id });
+    } as any).returning({ id: salesInvoices.id });
 
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
@@ -192,7 +192,7 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
         taxRate: Number(item.taxRate),
         totalLine: Number(item.totalLine),
         date: new Date().toISOString().split('T')[0]
-      });
+      } as any);
     }
     
     await db.update(quotes).set({ status: 'invoiced' }).where(eq(quotes.id, parseInt(id)));
