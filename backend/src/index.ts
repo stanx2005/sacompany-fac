@@ -1,17 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
-import authRoutes from './routes/authRoutes';
-import clientRoutes from './routes/clientRoutes';
-import supplierRoutes from './routes/supplierRoutes';
-import productRoutes from './routes/productRoutes';
-import tabRoutes from './routes/tabRoutes';
-import chequeRoutes from './routes/chequeRoutes';
-import invoiceRoutes from './routes/invoiceRoutes';
-import deliveryNoteRoutes from './routes/deliveryNoteRoutes';
-import purchaseOrderRoutes from './routes/purchaseOrderRoutes';
-import quoteRoutes from './routes/quoteRoutes';
-import statsRoutes from './routes/statsRoutes';
+import authRoutes from './routes/authRoutes.js';
+import clientRoutes from './routes/clientRoutes.js';
+import supplierRoutes from './routes/supplierRoutes.js';
+import productRoutes from './routes/productRoutes.js';
+import tabRoutes from './routes/tabRoutes.js';
+import chequeRoutes from './routes/chequeRoutes.js';
+import invoiceRoutes from './routes/invoiceRoutes.js';
+import deliveryNoteRoutes from './routes/deliveryNoteRoutes.js';
+import purchaseOrderRoutes from './routes/purchaseOrderRoutes.js';
+import statsRoutes from './routes/statsRoutes.js';
+import quoteRoutes from './routes/quoteRoutes.js';
 
 dotenv.config();
 
