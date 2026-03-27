@@ -45,12 +45,12 @@ export const addToTab = async (req: Request, res: Response) => {
 };
 
 export const deleteTabItem = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const tabId = Array.isArray(id) ? id[0] : id;
-  if (!tabId) return res.status(400).json({ message: 'ID manquant.' });
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
   
   try {
-    await db.delete(openTabs).where(eq(openTabs.id, parseInt(tabId)));
+    await db.delete(openTabs).where(eq(openTabs.id, parseInt(id)));
     res.json({ message: 'Article supprimé du carnet.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la suppression.', error });
@@ -100,12 +100,12 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
     const totalInclTax = totalExclTax + totalTax;
 
     const [invoiceResult] = await db.insert(salesInvoices).values({
-      invoiceNumber: 'TEMP',
+      invoiceNumber: 'TEMP-' + Date.now(),
       clientId: parseInt(clientId),
       date: new Date().toISOString().split('T')[0],
-      totalExclTax,
-      totalTax,
-      totalInclTax,
+      totalExclTax: Number(totalExclTax),
+      totalTax: Number(totalTax),
+      totalInclTax: Number(totalInclTax),
       status: 'pending'
     }).returning({ id: salesInvoices.id });
 

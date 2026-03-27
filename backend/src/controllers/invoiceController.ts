@@ -161,9 +161,9 @@ export const createInvoice = async (req: Request, res: Response) => {
       invoiceNumber: 'TEMP',
       clientId: parseInt(String(clientId)),
       date: String(date),
-      totalExclTax,
-      totalTax,
-      totalInclTax,
+      totalExclTax: Number(totalExclTax),
+      totalTax: Number(totalTax),
+      totalInclTax: Number(totalInclTax),
       status: 'pending'
     }).returning({ id: salesInvoices.id });
 

@@ -65,8 +65,8 @@ export const convertBCToBL = async (req: Request, res: Response) => {
     const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
     
     const [blResult] = await db.insert(deliveryNotes).values({
-      noteNumber: 'TEMP',
-      clientId: parseInt(String(clientId)),
+      noteNumber: 'TEMP-' + Date.now(),
+      clientId: Number(clientId),
       date: new Date().toISOString().split('T')[0],
       totalInclTax: Number(order.totalInclTax || 0),
       status: 'pending'
@@ -113,10 +113,10 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
     });
 
     const [result] = await db.insert(purchaseOrders).values({
-      orderNumber: 'TEMP',
+      orderNumber: 'TEMP-' + Date.now(),
       supplierId: parseInt(String(supplierId)),
       date: String(date),
-      totalInclTax: totalInclTax,
+      totalInclTax: Number(totalInclTax),
       status: 'pending'
     }).returning({ id: purchaseOrders.id });
 

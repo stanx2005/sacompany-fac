@@ -74,7 +74,7 @@ export const createQuote = async (req: Request, res: Response) => {
     const totalInclTax = totalExclTax + totalTax;
 
     const [result] = await db.insert(quotes).values({
-      quoteNumber: 'TEMP',
+      quoteNumber: 'TEMP-' + Date.now(),
       clientId: Number(clientId),
       date: String(date),
       totalExclTax: Number(totalExclTax),
@@ -172,7 +172,7 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
     const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, parseInt(id)));
     
     const [invoiceResult] = await db.insert(salesInvoices).values({
-      invoiceNumber: 'TEMP',
+      invoiceNumber: 'TEMP-' + Date.now(),
       clientId: Number(quote.clientId),
       date: new Date().toISOString().split('T')[0],
       totalExclTax: Number(quote.totalExclTax),
