@@ -10,17 +10,17 @@ export const register = async (req: Request, res: Response) => {
 
   try {
     const existingUser = await db.query.users.findFirst({
-      where: eq(users.email, email),
+      where: eq(users.email, String(email)),
     });
 
     if (existingUser) {
       return res.status(400).json({ message: 'Cet email est déjà utilisé.' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(String(password), 10);
     await db.insert(users).values({
-      name,
-      email,
+      name: String(name),
+      email: String(email),
       password: hashedPassword,
       companyName: 'SA COMPANY',
       companyICE: '000000000000000',
@@ -41,14 +41,14 @@ export const login = async (req: Request, res: Response) => {
 
   try {
     const user = await db.query.users.findFirst({
-      where: eq(users.email, email),
+      where: eq(users.email, String(email)),
     });
 
     if (!user) {
       return res.status(400).json({ message: 'Email ou mot de passe incorrect.' });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password);
+    const validPassword = await bcrypt.compare(String(password), user.password);
     if (!validPassword) {
       return res.status(400).json({ message: 'Email ou mot de passe incorrect.' });
     }
@@ -86,34 +86,36 @@ export const updateProfile = async (req: Request, res: Response) => {
   try {
     await db.update(users)
       .set({ 
-        name, 
-        email, 
-        companyName, 
-        companyICE, 
-        companyAddress, 
-        companyEmail, 
-        companyPhone, 
-        companyRIB 
+        name: String(name), 
+        email: String(email), 
+        companyName: String(companyName), 
+        companyICE: String(companyICE), 
+        companyAddress: String(companyAddress), 
+        companyEmail: String(companyEmail), 
+        companyPhone: String(companyPhone), 
+        companyRIB: String(companyRIB) 
       })
-      .where(eq(users.id, userId));
+      .where(eq(users.id, Number(userId)));
 
     const updatedUser = await db.query.users.findFirst({
-      where: eq(users.id, userId),
+      where: eq(users.id, Number(userId)),
     });
+
+    if (!updatedUser) return res.status(404).json({ message: 'Utilisateur non trouvé.' });
 
     res.json({ 
       message: 'Profil mis à jour avec succès.', 
       user: {
-        id: updatedUser?.id,
-        name: updatedUser?.name,
-        email: updatedUser?.email,
-        role: updatedUser?.role,
-        companyName: updatedUser?.companyName,
-        companyICE: updatedUser?.companyICE,
-        companyAddress: updatedUser?.companyAddress,
-        companyEmail: updatedUser?.companyEmail,
-        companyPhone: updatedUser?.companyPhone,
-        companyRIB: updatedUser?.companyRIB
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        companyName: updatedUser.companyName,
+        companyICE: updatedUser.companyICE,
+        companyAddress: updatedUser.companyAddress,
+        companyEmail: updatedUser.companyEmail,
+        companyPhone: updatedUser.companyPhone,
+        companyRIB: updatedUser.companyRIB
       }
     });
   } catch (error) {
