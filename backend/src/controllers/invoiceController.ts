@@ -3,6 +3,11 @@ import { db } from '../db';
 import { salesInvoices, invoiceItems, clients, products, deliveryNotes, deliveryNoteItems, purchaseOrders, purchaseOrderItems } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
+const safeId = (id: string | string[] | undefined): string => {
+  if (Array.isArray(id)) return id[0] || '0';
+  return id || '0';
+};
+
 export const getInvoices = async (req: Request, res: Response) => {
   try {
     const invoices = await db.select({
@@ -27,9 +32,7 @@ export const getInvoices = async (req: Request, res: Response) => {
 };
 
 export const getInvoiceItems = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const id = safeId(req.params.id);
   try {
     const items = await db.select({
       id: invoiceItems.id,
@@ -52,9 +55,7 @@ export const getInvoiceItems = async (req: Request, res: Response) => {
 };
 
 export const convertInvoiceToBL = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const id = safeId(req.params.id);
   try {
     const [invoice] = await db.select().from(salesInvoices).where(eq(salesInvoices.id, parseInt(id)));
     if (!invoice) return res.status(404).json({ message: 'Facture non trouvée.' });
@@ -62,13 +63,13 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
     
     const [blResult] = await db.insert(deliveryNotes).values({
       noteNumber: 'TEMP-BL-' + Date.now(),
-      clientId: Number(invoice.clientId),
-      date: new Date().toISOString().split('T')[0],
-      totalInclTax: Number(invoice.totalInclTax),
+      clientId: Number(invoice.clientId || 0),
+      date: new Date().toISOString().split('T')[0] || '',
+      totalInclTax: Number(invoice.totalInclTax || 0),
       status: 'pending'
     }).returning({ id: deliveryNotes.id });
 
-    if (!blResult) throw new Error('Erreur lors de la création du BL.');
+    if (!blResult) throw new Error('Erreur BL.');
 
     const noteNumber = `BL-CONV-${blResult.id + 99}`;
     await db.update(deliveryNotes).set({ noteNumber }).where(eq(deliveryNotes.id, blResult.id));
@@ -76,11 +77,11 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(deliveryNoteItems).values({
         deliveryNoteId: blResult.id,
-        productId: Number(item.productId),
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-        taxRate: Number(item.taxRate),
-        totalLine: Number(item.totalLine)
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0)
       });
     }
     res.json({ message: 'Facture convertie en Bon de Livraison avec succès.', blId: blResult.id });
@@ -90,13 +91,11 @@ export const convertInvoiceToBL = async (req: Request, res: Response) => {
 };
 
 export const convertInvoiceToBC = async (req: Request, res: Response) => {
-  const { id: rawId } = req.params;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  const id = safeId(req.params.id);
   const { supplierId } = req.body;
 
-  if (!id) return res.status(400).json({ message: 'ID facture manquant.' });
   if (!supplierId) {
-    return res.status(400).json({ message: 'Un fournisseur est requis pour cette conversion.' });
+    return res.status(400).json({ message: 'Un fournisseur est requis.' });
   }
 
   try {
@@ -106,13 +105,13 @@ export const convertInvoiceToBC = async (req: Request, res: Response) => {
     
     const [bcResult] = await db.insert(purchaseOrders).values({
       orderNumber: 'TEMP-BC-' + Date.now(),
-      supplierId: parseInt(String(supplierId)),
-      date: new Date().toISOString().split('T')[0],
-      totalInclTax: Number(invoice.totalInclTax),
+      supplierId: Number(supplierId || 0),
+      date: new Date().toISOString().split('T')[0] || '',
+      totalInclTax: Number(invoice.totalInclTax || 0),
       status: 'pending'
     }).returning({ id: purchaseOrders.id });
 
-    if (!bcResult) throw new Error('Erreur lors de la création du BC.');
+    if (!bcResult) throw new Error('Erreur BC.');
 
     const orderNumber = `BC-CONV-${bcResult.id + 99}`;
     await db.update(purchaseOrders).set({ orderNumber }).where(eq(purchaseOrders.id, bcResult.id));
@@ -120,11 +119,11 @@ export const convertInvoiceToBC = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(purchaseOrderItems).values({
         purchaseOrderId: bcResult.id,
-        productId: Number(item.productId),
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-        taxRate: Number(item.taxRate),
-        totalLine: Number(item.totalLine)
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0)
       });
     }
     res.json({ message: 'Facture convertie en Bon de Commande avec succès.', bcId: bcResult.id });
@@ -159,15 +158,15 @@ export const createInvoice = async (req: Request, res: Response) => {
 
     const [result] = await db.insert(salesInvoices).values({
       invoiceNumber: 'TEMP-INV-' + Date.now(),
-      clientId: parseInt(String(clientId)),
-      date: String(date),
+      clientId: Number(clientId || 0),
+      date: String(date || ''),
       totalExclTax: Number(totalExclTax),
       totalTax: Number(totalTax),
       totalInclTax: Number(totalInclTax),
       status: 'pending'
     }).returning({ id: salesInvoices.id });
 
-    if (!result) throw new Error('Erreur lors de la création de la facture.');
+    if (!result) throw new Error('Erreur facture.');
 
     const invoiceNumber = `FACT-${result.id + 99}`;
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, result.id));
@@ -175,11 +174,11 @@ export const createInvoice = async (req: Request, res: Response) => {
     for (const item of processedItems) {
       await db.insert(invoiceItems).values({
         invoiceId: result.id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate,
-        totalLine: item.totalLine,
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0),
         date: item.date
       });
     }

@@ -3,6 +3,11 @@ import { db } from '../db';
 import { deliveryNotes, deliveryNoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 
+const safeId = (id: string | string[] | undefined): string => {
+  if (Array.isArray(id)) return id[0] || '0';
+  return id || '0';
+};
+
 export const getDeliveryNotes = async (req: Request, res: Response) => {
   try {
     const notes = await db.select({
@@ -26,8 +31,7 @@ export const getDeliveryNotes = async (req: Request, res: Response) => {
 };
 
 export const getDeliveryNoteItems = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const id = safeId(req.params.id);
   try {
     const items = await db.select({
       id: deliveryNoteItems.id,
@@ -48,34 +52,30 @@ export const getDeliveryNoteItems = async (req: Request, res: Response) => {
 };
 
 export const markAsDelivered = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const id = safeId(req.params.id);
   try {
-    // 1. Get BL items
     const items = await db.select().from(deliveryNoteItems).where(eq(deliveryNoteItems.deliveryNoteId, parseInt(id)));
     
-    // 2. Deduct stock for each item
     for (const item of items) {
-      await db.update(products)
-        .set({ stock: sql`stock - ${item.quantity}` })
-        .where(eq(products.id, item.productId as number));
+      if (item.productId) {
+        await db.update(products)
+          .set({ stock: sql`stock - ${Number(item.quantity || 0)}` })
+          .where(eq(products.id, item.productId));
+      }
     }
 
-    // 3. Update status
     await db.update(deliveryNotes)
       .set({ status: 'delivered' })
       .where(eq(deliveryNotes.id, parseInt(id)));
 
     res.json({ message: 'Bon de livraison marqué comme livré et stock mis à jour.' });
   } catch (error) {
-    console.error('Delivered error:', error);
     res.status(500).json({ message: 'Erreur lors de la livraison.', error });
   }
 };
 
 export const convertBLToInvoice = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+  const id = safeId(req.params.id);
   try {
     const [bl] = await db.select().from(deliveryNotes).where(eq(deliveryNotes.id, parseInt(id)));
     if (!bl) return res.status(404).json({ message: 'Bon de livraison non trouvé.' });
@@ -84,22 +84,22 @@ export const convertBLToInvoice = async (req: Request, res: Response) => {
     let totalExclTax = 0;
     let totalTax = 0;
     for (const item of items) {
-      const lineExclTax = (item.quantity as number) * (item.unitPrice as number);
+      const lineExclTax = Number(item.quantity || 0) * Number(item.unitPrice || 0);
       totalExclTax += lineExclTax;
-      totalTax += lineExclTax * ((item.taxRate as number) / 100);
+      totalTax += lineExclTax * (Number(item.taxRate || 20) / 100);
     }
 
     const [invoiceResult] = await db.insert(salesInvoices).values({
-      invoiceNumber: 'TEMP',
-      clientId: bl.clientId as number,
-      date: new Date().toISOString().split('T')[0],
-      totalExclTax,
-      totalTax,
-      totalInclTax: bl.totalInclTax,
+      invoiceNumber: 'TEMP-INV-' + Date.now(),
+      clientId: Number(bl.clientId || 0),
+      date: new Date().toISOString().split('T')[0] || '',
+      totalExclTax: Number(totalExclTax),
+      totalTax: Number(totalTax),
+      totalInclTax: Number(bl.totalInclTax || 0),
       status: 'pending'
     }).returning({ id: salesInvoices.id });
 
-    if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
+    if (!invoiceResult) throw new Error('Erreur facture.');
 
     const invoiceNumber = `FACT-CONV-${invoiceResult.id + 99}`;
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
@@ -107,11 +107,12 @@ export const convertBLToInvoice = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(invoiceItems).values({
         invoiceId: invoiceResult.id,
-        productId: item.productId as number,
-        quantity: item.quantity as number,
-        unitPrice: item.unitPrice as number,
-        taxRate: item.taxRate as number,
-        totalLine: item.totalLine as number
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0),
+        date: new Date().toISOString().split('T')[0] || ''
       });
     }
     
@@ -128,20 +129,20 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
   try {
     let totalInclTax = 0;
     const processedItems = items.map((item: any) => {
-      const lineTotal = item.quantity * item.unitPrice * (1 + item.taxRate / 100);
+      const lineTotal = Number(item.quantity || 0) * Number(item.unitPrice || 0) * (1 + Number(item.taxRate || 20) / 100);
       totalInclTax += lineTotal;
       return { ...item, totalLine: lineTotal };
     });
 
     const [result] = await db.insert(deliveryNotes).values({
-      noteNumber: 'TEMP',
-      clientId: parseInt(clientId),
-      date: String(date),
-      totalInclTax,
+      noteNumber: 'TEMP-BL-' + Date.now(),
+      clientId: Number(clientId || 0),
+      date: String(date || ''),
+      totalInclTax: Number(totalInclTax),
       status: 'pending'
     }).returning({ id: deliveryNotes.id });
 
-    if (!result) throw new Error('Erreur lors de la création du bon de livraison.');
+    if (!result) throw new Error('Erreur BL.');
 
     const noteNumber = `BL-${result.id + 99}`;
     await db.update(deliveryNotes).set({ noteNumber }).where(eq(deliveryNotes.id, result.id));
@@ -149,15 +150,15 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
     for (const item of processedItems) {
       await db.insert(deliveryNoteItems).values({
         deliveryNoteId: result.id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate,
-        totalLine: item.totalLine
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0)
       });
     }
     res.status(201).json({ message: 'Bon de livraison créé.', id: result.id });
   } catch (error) {
-    res.status(500).json({ message: 'Erreur lors de la création du BL.', error });
+    res.status(500).json({ message: 'Erreur BL.', error });
   }
 };

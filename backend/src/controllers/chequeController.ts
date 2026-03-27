@@ -1,7 +1,12 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { db } from '../db';
 import { chequeRegistry, clients, suppliers } from '../db/schema';
 import { eq } from 'drizzle-orm';
+
+const safeId = (id: string | string[] | undefined): string => {
+  if (Array.isArray(id)) return id[0] || '0';
+  return id || '0';
+};
 
 export const getCheques = async (req: Request, res: Response) => {
   try {
@@ -32,7 +37,19 @@ export const getCheques = async (req: Request, res: Response) => {
 
 export const createCheque = async (req: Request, res: Response) => {
   try {
-    await db.insert(chequeRegistry).values(req.body);
+    const { chequeNumber, bankName, amount, issueDate, dueDate, type, clientId, supplierId } = req.body;
+    await db.insert(chequeRegistry).values({
+      chequeNumber: String(chequeNumber || ''),
+      bankName: String(bankName || ''),
+      amount: Number(amount || 0),
+      issueDate: String(issueDate || ''),
+      dueDate: String(dueDate || ''),
+      type: type as 'incoming' | 'outgoing',
+      clientId: clientId ? Number(clientId) : null,
+      supplierId: supplierId ? Number(supplierId) : null,
+      status: 'pending',
+      isPaid: 0
+    });
     res.status(201).json({ message: 'Chèque enregistré avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de l\'enregistrement du chèque.', error });
@@ -40,13 +57,13 @@ export const createCheque = async (req: Request, res: Response) => {
 };
 
 export const updateChequeStatus = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = safeId(req.params.id);
   const { status, isPaid } = req.body;
   
   try {
     const updateData: any = {};
     if (status !== undefined) updateData.status = status;
-    if (isPaid !== undefined) updateData.isPaid = isPaid;
+    if (isPaid !== undefined) updateData.isPaid = Number(isPaid);
 
     await db.update(chequeRegistry)
       .set(updateData)
