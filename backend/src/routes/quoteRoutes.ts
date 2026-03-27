@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getQuotes, createQuote, getQuoteItems, convertQuoteToInvoice, updateQuote } from '../controllers/quoteController';
-import { authenticateToken } from '../middleware/auth';
+import { getQuotes, createQuote, getQuoteItems, convertQuoteToInvoice, updateQuote } from '../controllers/quoteController.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 router.use(authenticateToken);

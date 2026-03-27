@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getCheques, createCheque, updateChequeStatus } from '../controllers/chequeController';
-import { authenticateToken } from '../middleware/auth';
+import { getCheques, createCheque, updateChequeStatus } from '../controllers/chequeController.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 

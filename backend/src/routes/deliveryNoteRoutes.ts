@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { getDeliveryNotes, createDeliveryNote, getDeliveryNoteItems, convertBLToInvoice, markAsDelivered } from '../controllers/deliveryNoteController';
-import { authenticateToken } from '../middleware/auth';
+import { getDeliveryNotes, createDeliveryNote, getDeliveryNoteItems, convertBLToInvoice, markAsDelivered } from '../controllers/deliveryNoteController.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 router.use(authenticateToken);
