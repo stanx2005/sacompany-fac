@@ -26,7 +26,9 @@ export const getPurchaseOrders = async (req: Request, res: Response) => {
 };
 
 export const getPurchaseOrderItems = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
   try {
     const items = await db.select({
       id: purchaseOrderItems.id,
@@ -39,7 +41,7 @@ export const getPurchaseOrderItems = async (req: Request, res: Response) => {
     })
     .from(purchaseOrderItems)
     .leftJoin(products, eq(purchaseOrderItems.productId, products.id))
-    .where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id || '0')));
+    .where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
     res.json(items);
   } catch (error) {
     res.status(500).json({ message: 'Erreur items.', error });
@@ -47,24 +49,26 @@ export const getPurchaseOrderItems = async (req: Request, res: Response) => {
 };
 
 export const convertBCToBL = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const { clientId } = req.body;
 
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
   if (!clientId) {
     return res.status(400).json({ message: 'Un client est requis pour cette conversion.' });
   }
 
   try {
-    const [order] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, parseInt(id || '0')));
+    const [order] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, parseInt(id)));
     if (!order) return res.status(404).json({ message: 'Bon de commande non trouvé.' });
 
-    const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id || '0')));
+    const items = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, parseInt(id)));
     
     const [blResult] = await db.insert(deliveryNotes).values({
       noteNumber: 'TEMP',
-      clientId: parseInt(clientId),
+      clientId: parseInt(String(clientId)),
       date: new Date().toISOString().split('T')[0],
-      totalInclTax: order.totalInclTax,
+      totalInclTax: Number(order.totalInclTax || 0),
       status: 'pending'
     }).returning({ id: deliveryNotes.id });
 
@@ -76,11 +80,11 @@ export const convertBCToBL = async (req: Request, res: Response) => {
     for (const item of items) {
       await db.insert(deliveryNoteItems).values({
         deliveryNoteId: blResult.id,
-        productId: item.productId as number,
-        quantity: item.quantity as number,
-        unitPrice: item.unitPrice as number,
-        taxRate: item.taxRate as number,
-        totalLine: item.totalLine as number
+        productId: Number(item.productId),
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+        taxRate: Number(item.taxRate),
+        totalLine: Number(item.totalLine)
       });
     }
     res.json({ message: 'Bon de Commande converti en Bon de Livraison avec succès.', blId: blResult.id });
@@ -94,16 +98,25 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   try {
     let totalInclTax = 0;
     const processedItems = items.map((item: any) => {
-      const lineTotal = item.quantity * item.unitPrice * (1 + item.taxRate / 100);
+      const price = Number(item.unitPrice || 0);
+      const taxRate = Number(item.taxRate || 20);
+      const qty = Number(item.quantity || 0);
+      const lineTotal = qty * price * (1 + taxRate / 100);
       totalInclTax += lineTotal;
-      return { ...item, totalLine: lineTotal };
+      return { 
+        productId: Number(item.productId),
+        quantity: qty,
+        unitPrice: price,
+        taxRate: taxRate,
+        totalLine: lineTotal 
+      };
     });
 
     const [result] = await db.insert(purchaseOrders).values({
       orderNumber: 'TEMP',
-      supplierId: parseInt(supplierId),
+      supplierId: parseInt(String(supplierId)),
       date: String(date),
-      totalInclTax,
+      totalInclTax: totalInclTax,
       status: 'pending'
     }).returning({ id: purchaseOrders.id });
 
