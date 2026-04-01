@@ -14,9 +14,15 @@ interface Invoice {
   taxNumber: string;
   address: string;
   phone: string;
+  paidCash?: number;
+  paidCheque?: number;
+  totalPaid?: number;
+  remaining?: number;
+  paymentStatus?: 'unpaid' | 'partial' | 'paid';
 }
 
 const Invoices = () => {
+  const CREATE_CLIENT_OPTION = '__create_client__';
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -33,6 +39,15 @@ const Invoices = () => {
     clientId: '',
     date: new Date().toISOString().split('T')[0],
     items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
+  });
+  const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientData, setNewClientData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    taxNumber: '',
   });
 
   const fetchData = async () => {
@@ -152,6 +167,31 @@ const Invoices = () => {
     }
   };
 
+  const openCreateClientModal = () => {
+    setNewClientData({ name: '', email: '', phone: '', address: '', taxNumber: '' });
+    setIsCreateClientOpen(true);
+  };
+
+  const handleCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setCreatingClient(true);
+      await api.post('/clients', newClientData);
+      const clientsRes = await api.get('/clients');
+      const allClients = clientsRes.data || [];
+      setClients(allClients);
+      const createdClient = allClients[allClients.length - 1];
+      if (createdClient?.id) {
+        setFormData((prev) => ({ ...prev, clientId: String(createdClient.id) }));
+      }
+      setIsCreateClientOpen(false);
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur lors de la creation du client.');
+    } finally {
+      setCreatingClient(false);
+    }
+  };
+
   const filteredInvoices = invoices
     .filter((invoice) =>
       invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -212,15 +252,17 @@ const Invoices = () => {
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Client</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Date</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Montant TTC</th>
+                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Regle</th>
+                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Reste</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Statut</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={6} className="px-8 py-20 text-center text-slate-400 font-medium">Chargement...</td></tr>
+                <tr><td colSpan={8} className="px-8 py-20 text-center text-slate-400 font-medium">Chargement...</td></tr>
               ) : filteredInvoices.length === 0 ? (
-                <tr><td colSpan={6} className="px-8 py-20 text-center text-slate-400 font-medium">Aucune facture trouvée.</td></tr>
+                <tr><td colSpan={8} className="px-8 py-20 text-center text-slate-400 font-medium">Aucune facture trouvée.</td></tr>
               ) : (
                 filteredInvoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-slate-50/50 transition-colors group">
@@ -237,11 +279,21 @@ const Invoices = () => {
                     <td className="px-8 py-6 text-right font-mono font-black text-slate-900">
                       {invoice.totalInclTax.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
                     </td>
+                    <td className="px-8 py-6 text-right font-mono font-black text-emerald-700">
+                      {Number(invoice.totalPaid || 0).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                    </td>
+                    <td className="px-8 py-6 text-right font-mono font-black text-rose-600">
+                      {Number(invoice.remaining ?? invoice.totalInclTax).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                    </td>
                     <td className="px-8 py-6">
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        invoice.status === 'paid' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                        invoice.paymentStatus === 'paid'
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : invoice.paymentStatus === 'partial'
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'bg-amber-50 text-amber-600'
                       }`}>
-                        {invoice.status === 'paid' ? 'Payée' : 'En attente'}
+                        {invoice.paymentStatus === 'paid' ? 'Payee' : invoice.paymentStatus === 'partial' ? 'Partielle' : 'En attente'}
                       </span>
                     </td>
                     <td className="px-8 py-6 text-right">
@@ -327,8 +379,16 @@ const Invoices = () => {
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Client</label>
-                  <select required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.clientId} onChange={(e) => setFormData({...formData, clientId: e.target.value})}>
+                  <select required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.clientId} onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === CREATE_CLIENT_OPTION) {
+                      openCreateClientModal();
+                      return;
+                    }
+                    setFormData({...formData, clientId: value});
+                  }}>
                     <option value="">Sélectionner un client</option>
+                    <option value={CREATE_CLIENT_OPTION}>+ Creer un client</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
@@ -380,6 +440,48 @@ const Invoices = () => {
                 <button type="submit" className="flex-1 px-4 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all flex items-center justify-center space-x-2">
                   <Save className="w-4 h-4" />
                   <span>Générer la Facture</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {isCreateClientOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-xl font-black text-slate-800">Nouveau Client</h2>
+              <button type="button" onClick={() => setIsCreateClientOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateClient} className="p-8 space-y-5">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Nom Complet</label>
+                <input type="text" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.name} onChange={(e) => setNewClientData({ ...newClientData, name: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Telephone</label>
+                  <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.phone} onChange={(e) => setNewClientData({ ...newClientData, phone: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Matricule Fiscale</label>
+                  <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.taxNumber} onChange={(e) => setNewClientData({ ...newClientData, taxNumber: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Email</label>
+                <input type="email" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.email} onChange={(e) => setNewClientData({ ...newClientData, email: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Adresse</label>
+                <textarea rows={3} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.address} onChange={(e) => setNewClientData({ ...newClientData, address: e.target.value })} />
+              </div>
+              <div className="pt-4 flex space-x-3">
+                <button type="button" onClick={() => setIsCreateClientOpen(false)} className="flex-1 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Annuler</button>
+                <button type="submit" disabled={creatingClient} className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all disabled:opacity-60">
+                  {creatingClient ? 'Creation...' : 'Creer'}
                 </button>
               </div>
             </form>

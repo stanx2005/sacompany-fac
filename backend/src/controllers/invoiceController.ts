@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { salesInvoices, invoiceItems, clients, products, deliveryNotes, deliveryNoteItems, purchaseOrders, purchaseOrderItems } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { salesInvoices, invoiceItems, clients, products, deliveryNotes, deliveryNoteItems, purchaseOrders, purchaseOrderItems, chequeRegistry, cashPayments } from '../db/schema.js';
+import { and, eq, sql } from 'drizzle-orm';
 
 const safeId = (id: string | string[] | undefined): string => {
   if (Array.isArray(id)) return id[0] || '0';
@@ -24,8 +24,43 @@ export const getInvoices = async (req: Request, res: Response) => {
     })
     .from(salesInvoices)
     .leftJoin(clients, eq(salesInvoices.clientId, clients.id));
-    
-    res.json(invoices);
+
+    const withPayments = await Promise.all(
+      invoices.map(async (invoice) => {
+        const [cashSum] = await db
+          .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
+          .from(cashPayments)
+          .where(eq(cashPayments.invoiceId, invoice.id));
+
+        const [chequeSum] = await db
+          .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
+          .from(chequeRegistry)
+          .where(
+            and(
+              eq(chequeRegistry.invoiceId, invoice.id),
+              eq(chequeRegistry.type, 'incoming')
+            )
+          );
+
+        const paidCash = Number(cashSum?.total || 0);
+        const paidCheque = Number(chequeSum?.total || 0);
+        const totalPaid = paidCash + paidCheque;
+        const total = Number(invoice.totalInclTax || 0);
+        const remaining = Math.max(total - totalPaid, 0);
+        const paymentStatus = totalPaid <= 0 ? 'unpaid' : remaining <= 0.0001 ? 'paid' : 'partial';
+
+        return {
+          ...invoice,
+          paidCash,
+          paidCheque,
+          totalPaid,
+          remaining,
+          paymentStatus,
+        };
+      })
+    );
+
+    res.json(withPayments);
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la récupération des factures.', error });
   }

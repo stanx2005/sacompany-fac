@@ -22,6 +22,13 @@
       "when": 1774529408044,
       "tag": "0002_glossy_omega_flight",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1775000000000,
+      "tag": "0003_cash_payments_and_invoice_links",
+      "breakpoints": true
     }
   ]
 }

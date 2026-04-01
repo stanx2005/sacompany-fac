@@ -12,6 +12,7 @@ import deliveryNoteRoutes from './routes/deliveryNoteRoutes.js';
 import purchaseOrderRoutes from './routes/purchaseOrderRoutes.js';
 import statsRoutes from './routes/statsRoutes.js';
 import quoteRoutes from './routes/quoteRoutes.js';
+import cashPaymentRoutes from './routes/cashPaymentRoutes.js';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/api/delivery-notes', deliveryNoteRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/cash-payments', cashPaymentRoutes);
 
 app.get('/', (req, res) => {
   res.send('B2B Invoicing API is running...');

@@ -8,15 +8,22 @@ import {
   FileText, 
   BookOpen, 
   CreditCard, 
+  Wallet,
   LogOut,
   ShoppingCart,
   ClipboardList,
   UserCircle,
-  ChevronRight
+  ChevronRight,
+  X
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
-const Sidebar = () => {
+type SidebarProps = {
+  mobileOpen?: boolean;
+  onClose?: () => void;
+};
+
+const Sidebar = ({ mobileOpen = false, onClose }: SidebarProps) => {
   const logout = useAuthStore((state) => state.logout);
 
   const menuItems = [
@@ -37,6 +44,7 @@ const Sidebar = () => {
     ]},
     { group: 'Finance', items: [
       { icon: CreditCard, label: 'Chèques', path: '/cheques' },
+      { icon: Wallet, label: 'Paiement en especes', path: '/cash-payments' },
     ]},
     { group: 'Compte', items: [
       { icon: UserCircle, label: 'Mon Profil', path: '/profile' },
@@ -44,20 +52,34 @@ const Sidebar = () => {
   ];
 
   return (
-    <div className="w-72 bg-white h-screen border-r border-slate-200 flex flex-col sticky top-0">
-      <div className="p-8">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-100">
-            <Package className="text-white w-6 h-6" />
+    <aside
+      className={`fixed inset-y-0 left-0 z-50 flex h-screen w-[min(18rem,85vw)] max-w-[100vw] flex-col border-r border-slate-200 bg-white shadow-xl transition-transform duration-300 ease-out lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-72 lg:max-w-none lg:shadow-none ${
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      } lg:translate-x-0`}
+    >
+      <div className="p-5 sm:p-6 lg:p-8">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center space-x-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 shadow-lg shadow-emerald-100">
+              <Package className="h-6 w-6 text-white" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base font-black leading-none text-slate-900 sm:text-lg">SA-COMPANY</h1>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">B2B System</span>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 leading-none">SA COMPANY</h1>
-            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">B2B System</span>
-          </div>
+          <button
+            type="button"
+            aria-label="Fermer le menu"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 lg:hidden"
+            onClick={() => onClose?.()}
+          >
+            <X className="h-5 w-5" strokeWidth={2.25} />
+          </button>
         </div>
       </div>
 
-      <nav className="flex-1 px-4 overflow-y-auto custom-scrollbar pb-8">
+      <nav className="custom-scrollbar flex-1 overflow-y-auto px-3 pb-8 sm:px-4">
         {menuItems.map((group, idx) => (
           <div key={idx} className="mb-8">
             <h3 className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">
@@ -68,8 +90,9 @@ const Sidebar = () => {
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  onClick={() => onClose?.()}
                   className={({ isActive }) =>
-                    `flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${
+                    `group flex min-h-[44px] items-center justify-between rounded-xl px-4 py-3 transition-all active:scale-[0.99] ${
                       isActive 
                         ? 'bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-50/50' 
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
@@ -90,16 +113,20 @@ const Sidebar = () => {
         ))}
       </nav>
 
-      <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+      <div className="border-t border-slate-100 bg-slate-50/50 p-3 sm:p-4">
         <button
-          onClick={logout}
-          className="flex items-center space-x-3 px-4 py-3 w-full text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all font-bold text-sm"
+          type="button"
+          onClick={() => {
+            onClose?.();
+            logout();
+          }}
+          className="flex min-h-[44px] w-full items-center space-x-3 rounded-xl px-4 py-3 text-sm font-bold text-slate-500 transition-all hover:bg-red-50 hover:text-red-600 active:scale-[0.99]"
         >
           <LogOut className="w-5 h-5" />
           <span>Déconnexion</span>
         </button>
       </div>
-    </div>
+    </aside>
   );
 };
 

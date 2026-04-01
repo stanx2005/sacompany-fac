@@ -121,6 +121,19 @@ export const chequeRegistry = sqliteTable('cheque_registry', {
   isPaid: integer('is_paid').default(0), // 0 for false, 1 for true
   clientId: integer('client_id').references(() => clients.id),
   supplierId: integer('supplier_id').references(() => suppliers.id),
+  invoiceId: integer('invoice_id').references(() => salesInvoices.id),
+  invoiceNumber: text('invoice_number'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+});
+
+export const cashPayments = sqliteTable('cash_payments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  paymentNumber: text('payment_number').notNull().unique(),
+  invoiceId: integer('invoice_id').references(() => salesInvoices.id),
+  clientId: integer('client_id').references(() => clients.id),
+  amount: real('amount').notNull(),
+  paymentDate: text('payment_date').notNull(),
+  note: text('note'),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
 

@@ -45,7 +45,7 @@ export const generatePDF = (title: string, data: any, items: any[], entity: any,
     const isBL = title === "BON DE LIVRAISON";
 
     // Use dynamic company info or fallback to defaults
-    const cName = companyInfo.companyName || "SA COMPANY";
+    const cName = companyInfo.companyName || "SA-COMPANY";
     const cICE = companyInfo.companyICE || "000000000000000";
     const cAddress = companyInfo.companyAddress || "Votre Adresse Ici, Casablanca";
     const cEmail = companyInfo.companyEmail || "contact@sacompany.ma";

@@ -43,8 +43,8 @@ const Login = () => {
             <div className="w-24 h-24 bg-emerald-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-emerald-200 rotate-12 animate-bounce">
               <Building2 className="w-12 h-12 text-white -rotate-12" />
             </div>
-            <div className="space-y-2">
-              <h1 className="text-4xl font-black text-gray-900 tracking-tight">
+            <div className="space-y-2 px-2">
+              <h1 className="text-2xl font-black tracking-tight text-gray-900 sm:text-4xl">
                 Bienvenue, {useAuthStore.getState().user?.name} !
               </h1>
               <p className="text-gray-500 font-medium text-lg">Préparation de votre espace de travail...</p>
@@ -73,7 +73,7 @@ const Login = () => {
             <div className="mx-auto h-16 w-16 flex items-center justify-center rounded-2xl bg-emerald-600 shadow-lg shadow-emerald-100 mb-6">
               <Building2 className="h-8 w-8 text-white" />
             </div>
-            <h2 className="text-3xl font-black text-gray-900 tracking-tight">SA COMPANY</h2>
+            <h2 className="text-3xl font-black text-gray-900 tracking-tight">SA-COMPANY</h2>
             <p className="mt-2 text-sm font-medium text-gray-500">Système de Facturation B2B</p>
           </div>
 
@@ -143,7 +143,7 @@ const Login = () => {
           </div>
         </div>
         <p className="mt-8 text-center text-xs font-bold text-gray-400 uppercase tracking-[0.2em]">
-          &copy; 2026 SA COMPANY B2B
+          &copy; 2026 SA-COMPANY B2B
         </p>
       </div>
     </div>

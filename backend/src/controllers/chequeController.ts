@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { chequeRegistry, clients, suppliers } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { chequeRegistry, clients, salesInvoices, suppliers } from '../db/schema.js';
+import { and, eq, sql } from 'drizzle-orm';
 
 const safeId = (id: string | string[] | undefined): string => {
   if (Array.isArray(id)) return id[0] || '0';
@@ -22,6 +22,8 @@ export const getCheques = async (req: Request, res: Response) => {
       isPaid: chequeRegistry.isPaid,
       clientId: chequeRegistry.clientId,
       supplierId: chequeRegistry.supplierId,
+      invoiceId: chequeRegistry.invoiceId,
+      invoiceNumber: chequeRegistry.invoiceNumber,
       clientName: clients.name,
       supplierName: suppliers.name,
     })
@@ -37,16 +39,55 @@ export const getCheques = async (req: Request, res: Response) => {
 
 export const createCheque = async (req: Request, res: Response) => {
   try {
-    const { chequeNumber, bankName, amount, issueDate, dueDate, type, clientId, supplierId } = req.body;
+    const { chequeNumber, bankName, amount, issueDate, dueDate, type, clientId, supplierId, invoiceId, invoiceNumber } = req.body;
+    const normalizedAmount = Number(amount || 0);
+    const normalizedType = type as 'incoming' | 'outgoing';
+    const normalizedInvoiceId = invoiceId ? Number(invoiceId) : null;
+
+    if (normalizedAmount <= 0) {
+      return res.status(400).json({ message: 'Le montant doit etre superieur a 0.' });
+    }
+
+    if (normalizedType === 'incoming' && normalizedInvoiceId) {
+      const [invoice] = await db
+        .select({
+          id: salesInvoices.id,
+          clientId: salesInvoices.clientId,
+          totalInclTax: salesInvoices.totalInclTax,
+        })
+        .from(salesInvoices)
+        .where(eq(salesInvoices.id, normalizedInvoiceId));
+
+      if (!invoice) {
+        return res.status(404).json({ message: 'Facture introuvable.' });
+      }
+
+      if (clientId && Number(clientId) !== Number(invoice.clientId || 0)) {
+        return res.status(400).json({ message: 'Le client ne correspond pas a la facture liee.' });
+      }
+
+      const [linkedChequeSum] = await db
+        .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
+        .from(chequeRegistry)
+        .where(and(eq(chequeRegistry.invoiceId, normalizedInvoiceId), eq(chequeRegistry.type, 'incoming')));
+
+      const nextChequeTotal = Number(linkedChequeSum?.total || 0) + normalizedAmount;
+      if (nextChequeTotal > Number(invoice.totalInclTax || 0) + 0.0001) {
+        return res.status(400).json({ message: 'Le total cheque depasse le montant de la facture.' });
+      }
+    }
+
     await db.insert(chequeRegistry).values({
       chequeNumber: String(chequeNumber || ''),
       bankName: String(bankName || ''),
-      amount: Number(amount || 0),
+      amount: normalizedAmount,
       issueDate: String(issueDate || ''),
       dueDate: String(dueDate || ''),
-      type: type as 'incoming' | 'outgoing',
+      type: normalizedType,
       clientId: clientId ? Number(clientId) : null,
       supplierId: supplierId ? Number(supplierId) : null,
+      invoiceId: normalizedType === 'incoming' ? normalizedInvoiceId : null,
+      invoiceNumber: normalizedType === 'incoming' ? (invoiceNumber ? String(invoiceNumber) : null) : null,
       status: 'pending',
       isPaid: 0
     });
