@@ -22,12 +22,18 @@ const Tabs = () => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
+  const [editingItem, setEditingItem] = useState<TabItem | null>(null);
+
   const [formData, setFormData] = useState({
     clientId: '',
     productId: '',
     quantity: '1',
     date: new Date().toISOString().split('T')[0]
+  });
+  const [editForm, setEditForm] = useState({
+    productId: '',
+    quantity: '1',
+    date: '',
   });
   const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
@@ -99,13 +105,42 @@ const Tabs = () => {
     }
   };
 
-  const handleGenerateBon = (clientId: number, data: any) => {
+  const openEditItem = (item: TabItem) => {
+    setEditForm({
+      productId: String(item.productId),
+      quantity: String(item.quantity),
+      date: item.date,
+    });
+    setEditingItem(item);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    try {
+      await api.patch(`/tabs/${editingItem.id}`, {
+        productId: parseInt(editForm.productId, 10),
+        quantity: parseInt(editForm.quantity, 10),
+        date: editForm.date,
+      });
+      setEditingItem(null);
+      fetchData();
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('Impossible de mettre à jour la ligne.');
+    }
+  };
+
+  const handleGenerateBon = async (clientId: number, data: any) => {
     try {
       const client = clients.find((c) => c.id === clientId);
+      const settingsRes = await api.get('/settings').catch(() => ({ data: {} }));
+      const pb = settingsRes.data?.pdfBranding || {};
+      const bonPrefix = settingsRes.data?.numbering?.bonTab ?? 'BON-TAB-';
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       const pdfData = {
         date: new Date().toISOString().split('T')[0],
-        noteNumber: `BON-TAB-${clientId}-${Date.now().toString().slice(-4)}`,
+        noteNumber: `${bonPrefix}${clientId}-${Date.now().toString().slice(-4)}`,
       };
       const pdfItems = (data.items || []).map((item: TabItem) => ({
         productName: item.productName,
@@ -120,7 +155,7 @@ const Tabs = () => {
         address: client?.address || '',
         phone: client?.phone || '',
       };
-      generatePDF('BON', pdfData, pdfItems, entity, user);
+      generatePDF('BON', pdfData, pdfItems, entity, { ...user, ...pb });
     } catch (error) {
       console.error('Erreur generation BON:', error);
       alert('Erreur lors de la generation du BON.');
@@ -228,7 +263,7 @@ const Tabs = () => {
                     <CheckCircle className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => handleGenerateBon(parseInt(clientId), data)}
+                    onClick={() => void handleGenerateBon(parseInt(clientId), data)}
                     className="p-2 text-blue-600 hover:bg-white hover:shadow-sm rounded-xl transition-all"
                     title="Générer BON PDF"
                   >
@@ -252,9 +287,18 @@ const Tabs = () => {
                         <div className="font-black text-orange-600 text-sm">x{item.quantity}</div>
                         <div className="text-[10px] font-bold text-slate-400">{(item.quantity * item.productPrice * 1.2).toFixed(2)} MAD</div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => openEditItem(item)}
+                        className="opacity-0 group-hover/item:opacity-100 p-1.5 text-slate-300 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all"
+                        title="Modifier"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
                       <button 
                         onClick={() => handleDeleteItem(item.id)}
                         className="opacity-0 group-hover/item:opacity-100 p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                        title="Supprimer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -362,6 +406,81 @@ const Tabs = () => {
           </div>
         </div>
       )}
+      {editingItem && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-xl font-black text-slate-800 flex items-center space-x-2">
+                <Edit2 className="w-6 h-6 text-orange-600" />
+                <span>Modifier la ligne</span>
+              </h2>
+              <button type="button" onClick={() => setEditingItem(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="p-8 space-y-5">
+              <p className="text-sm font-bold text-slate-600">
+                Client : <span className="text-slate-900">{editingItem.clientName}</span>
+              </p>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Produit</label>
+                <select
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                  value={editForm.productId}
+                  onChange={(e) => setEditForm({ ...editForm, productId: e.target.value })}
+                >
+                  <option value="">Sélectionner un produit</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Quantité</label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                    value={editForm.quantity}
+                    onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Date</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                    value={editForm.date}
+                    onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="pt-4 flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="flex-1 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-3 bg-orange-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-orange-700 shadow-lg shadow-orange-100 transition-all"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {isCreateClientOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">

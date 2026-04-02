@@ -38,30 +38,106 @@ const numberToFrenchWords = (n: number): string => {
   return convert(n);
 };
 
-export const generatePDF = (title: string, data: any, items: any[], entity: any, companyInfo: any = {}) => {
-  try {
-    const doc = new jsPDF();
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
+}
+
+/** Noms / marque par défaut (schéma) — ne pas imprimer sur les PDF. */
+function isPlaceholderCompanyName(raw: string | undefined | null): boolean {
+  const t = String(raw ?? '').trim();
+  if (!t) return true;
+  return /^SA[\s_-]*COMPANY$/i.test(t);
+}
+
+function isPlaceholderIce(raw: string | undefined | null): boolean {
+  const d = String(raw ?? '').replace(/\s/g, '');
+  return !d || /^0+$/.test(d);
+}
+
+function isPlaceholderAddress(raw: string | undefined | null): boolean {
+  const t = String(raw ?? '').trim();
+  if (!t) return true;
+  return /votre adresse ici/i.test(t);
+}
+
+function isPlaceholderEmail(raw: string | undefined | null): boolean {
+  return String(raw ?? '').trim().toLowerCase() === 'contact@sacompany.ma';
+}
+
+function isPlaceholderPhone(raw: string | undefined | null): boolean {
+  const t = String(raw ?? '').trim();
+  if (!t) return true;
+  return t === '+212 5XX XX XX XX' || /^\+212\s*5XX(\s*XX){3}$/i.test(t);
+}
+
+function isPlaceholderRib(raw: string | undefined | null): boolean {
+  const d = String(raw ?? '').replace(/\D/g, '');
+  return !d || /^0+$/.test(d);
+}
+
+function addLogoImage(doc: jsPDF, logoDataUrl: string, margin: number): boolean {
+  if (!logoDataUrl || !logoDataUrl.startsWith('data:image')) return false;
+  const lower = logoDataUrl.toLowerCase();
+  const formats: Array<'PNG' | 'JPEG' | 'WEBP'> = lower.includes('image/png')
+    ? ['PNG', 'JPEG', 'WEBP']
+    : lower.includes('image/jpeg') || lower.includes('image/jpg')
+      ? ['JPEG', 'PNG', 'WEBP']
+      : lower.includes('image/webp')
+        ? ['WEBP', 'PNG', 'JPEG']
+        : ['PNG', 'JPEG', 'WEBP'];
+  for (const fmt of formats) {
+    try {
+      doc.addImage(logoDataUrl, fmt, margin, 5, 36, 36);
+      return true;
+    } catch {
+      /* try next */
+    }
+  }
+  return false;
+}
+
+function buildFooterInfoLine(companyInfo: any): string {
+  const parts: string[] = [];
+  const ice = String(companyInfo?.companyICE ?? '').trim();
+  if (!isPlaceholderIce(ice)) parts.push(`ICE: ${ice}`);
+  const addr = String(companyInfo?.companyAddress ?? '').trim();
+  if (!isPlaceholderAddress(addr)) parts.push(`Adresse: ${addr}`);
+  const em = String(companyInfo?.companyEmail ?? '').trim();
+  if (!isPlaceholderEmail(em)) parts.push(`Email: ${em}`);
+  const ph = String(companyInfo?.companyPhone ?? '').trim();
+  if (!isPlaceholderPhone(ph)) parts.push(`Tél: ${ph}`);
+  const rib = String(companyInfo?.companyRIB ?? '').trim();
+  if (!isPlaceholderRib(rib)) parts.push(`RIB: ${rib}`);
+  return parts.join(' | ');
+}
+
+function buildPdfDocument(
+  title: string,
+  data: any,
+  items: any[],
+  entity: any,
+  companyInfo: any = {}
+): { doc: jsPDF; filename: string } {
+  const doc = new jsPDF();
     const margin = 15;
     const isBL = title === "BON DE LIVRAISON";
 
-    // Use dynamic company info or fallback to defaults
-    const cName = companyInfo.companyName || "SA-COMPANY";
-    const cICE = companyInfo.companyICE || "000000000000000";
-    const cAddress = companyInfo.companyAddress || "Votre Adresse Ici, Casablanca";
-    const cEmail = companyInfo.companyEmail || "contact@sacompany.ma";
-    const cPhone = companyInfo.companyPhone || "+212 5XX XX XX XX";
-    const cRIB = companyInfo.companyRIB || "000 000 0000000000000000 00";
+    const footerLegalExtra = (companyInfo as { footerLegal?: string }).footerLegal || "";
+    const logoDataUrl = (companyInfo as { logoDataUrl?: string }).logoDataUrl || "";
+    const cName = isPlaceholderCompanyName(companyInfo.companyName)
+      ? ''
+      : String(companyInfo.companyName ?? '').trim();
 
-    // Company Logo / Name
-    doc.setFontSize(24);
-    doc.setTextColor(30, 58, 138); // Dark Blue
-    doc.setFont("helvetica", "bold");
-    doc.text(cName, margin, 20);
-    
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    doc.setFont("helvetica", "normal");
-    doc.text("Votre partenaire B2B de confiance", margin, 25);
+    const logoOk = addLogoImage(doc, logoDataUrl, margin);
+    if (!logoOk && cName) {
+      doc.setFontSize(24);
+      doc.setTextColor(30, 58, 138);
+      doc.setFont("helvetica", "bold");
+      doc.text(cName, margin, 20);
+    }
 
     // Document Title
     doc.setFontSize(18);
@@ -200,22 +276,53 @@ export const generatePDF = (title: string, data: any, items: any[], entity: any,
       doc.rect(125, signatureY + 12, 70, 30);
     }
 
-    // Footer with Dynamic Company Details
+    // Footer with Dynamic Company Details (sans libellés par défaut type « SA COMPANY »)
     doc.setDrawColor(230);
     doc.line(margin, 275, 195, 275);
     doc.setFontSize(8);
     doc.setTextColor(100);
-    doc.setFont("helvetica", "bold");
-    doc.text(cName, 105, 280, { align: 'center' });
+    let footerY = 280;
+    if (cName) {
+      doc.setFont("helvetica", "bold");
+      doc.text(cName, 105, footerY, { align: 'center' });
+      footerY += 5;
+    }
     doc.setFont("helvetica", "normal");
-    const footerInfo = `ICE: ${cICE} | Adresse: ${cAddress} | Email: ${cEmail}\nTél: ${cPhone} | RIB: ${cRIB}`;
-    doc.text(footerInfo, 105, 285, { align: 'center' });
+    const footerInfo = buildFooterInfoLine(companyInfo);
+    if (footerInfo) {
+      doc.text(footerInfo, 105, footerY, { align: 'center', maxWidth: 180 });
+      footerY += 5;
+    }
+    if (footerLegalExtra) {
+      doc.setFontSize(7);
+      doc.setTextColor(80);
+      doc.text(footerLegalExtra, 105, footerY + 2, { align: 'center', maxWidth: 180 });
+    }
 
-    const docNumber = data.invoiceNumber || data.noteNumber || data.orderNumber || data.quoteNumber;
-    const fileName = `${title}_${docNumber}_${entity.name.replace(/\s+/g, '_').toUpperCase()}.pdf`;
-    doc.save(fileName);
+    const docNum = data.invoiceNumber || data.noteNumber || data.orderNumber || data.quoteNumber;
+    const fileName = `${title}_${docNum}_${entity.name.replace(/\s+/g, '_').toUpperCase()}.pdf`;
+    return { doc, filename: fileName };
+}
+
+export const generatePDF = (title: string, data: any, items: any[], entity: any, companyInfo: any = {}) => {
+  try {
+    const { doc, filename } = buildPdfDocument(title, data, items, entity, companyInfo);
+    doc.save(filename);
   } catch (error) {
     console.error("Erreur lors de la génération du PDF:", error);
     alert("Erreur lors de la génération du PDF. Veuillez vérifier la console.");
   }
 };
+
+/** Même rendu que le téléchargement, pour envoi e-mail / WhatsApp (pièce jointe). */
+export function generatePDFAsBase64(
+  title: string,
+  data: any,
+  items: any[],
+  entity: any,
+  companyInfo: any = {}
+): { filename: string; base64: string } {
+  const { doc, filename } = buildPdfDocument(title, data, items, entity, companyInfo);
+  const buf = doc.output('arraybuffer') as ArrayBuffer;
+  return { filename, base64: arrayBufferToBase64(buf) };
+}

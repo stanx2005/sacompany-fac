@@ -32,8 +32,14 @@ const Dashboard = () => {
     pendingIncoming: 0,
     pendingOutgoing: 0,
     totalQuotes: 0,
-    chartData: [],
-    purchaseChartData: []
+    chartData: [] as any[],
+    purchaseChartData: [] as any[],
+    kpi: {
+      unpaidReceivables: 0,
+      paidByCashTotal: 0,
+      paidByChequeIncomingTotal: 0,
+      topClients: [] as { clientName: string | null; totalSales: number }[],
+    },
   });
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState<'day' | 'week' | 'month' | 'year'>('day');
@@ -49,7 +55,13 @@ const Dashboard = () => {
           pendingOutgoing: Number(response.data.pendingOutgoing || 0),
           totalQuotes: Number(response.data.totalQuotes || 0),
           chartData: response.data.chartData || [],
-          purchaseChartData: response.data.purchaseChartData || []
+          purchaseChartData: response.data.purchaseChartData || [],
+          kpi: {
+            unpaidReceivables: Number(response.data.kpi?.unpaidReceivables || 0),
+            paidByCashTotal: Number(response.data.kpi?.paidByCashTotal || 0),
+            paidByChequeIncomingTotal: Number(response.data.kpi?.paidByChequeIncomingTotal || 0),
+            topClients: response.data.kpi?.topClients || [],
+          },
         });
       } catch (error) {
         console.error('Erreur:', error);
@@ -139,6 +151,44 @@ const Dashboard = () => {
           </div>
         ))}
       </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-[2rem] border border-rose-200/60 bg-rose-50/40 p-6 shadow-sm">
+          <h3 className="text-[11px] font-black uppercase tracking-widest text-rose-600">Créances ouvertes</h3>
+          <p className="mt-2 text-2xl font-black text-slate-900">
+            {loading ? '…' : `${stats.kpi.unpaidReceivables.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD`}
+          </p>
+          <p className="mt-1 text-xs font-medium text-slate-500">Reste à encaisser (factures non archivées)</p>
+        </div>
+        <div className="rounded-[2rem] border border-emerald-200/60 bg-emerald-50/40 p-6 shadow-sm">
+          <h3 className="text-[11px] font-black uppercase tracking-widest text-emerald-700">Encaissements espèces</h3>
+          <p className="mt-2 text-2xl font-black text-slate-900">
+            {loading ? '…' : `${stats.kpi.paidByCashTotal.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD`}
+          </p>
+        </div>
+        <div className="rounded-[2rem] border border-blue-200/60 bg-blue-50/40 p-6 shadow-sm">
+          <h3 className="text-[11px] font-black uppercase tracking-widest text-blue-700">Chèques entrants (total)</h3>
+          <p className="mt-2 text-2xl font-black text-slate-900">
+            {loading ? '…' : `${stats.kpi.paidByChequeIncomingTotal.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD`}
+          </p>
+        </div>
+      </div>
+
+      {stats.kpi.topClients.length > 0 && (
+        <div className="rounded-[2rem] border border-slate-200/60 bg-white p-6 shadow-sm">
+          <h3 className="mb-4 text-sm font-black uppercase tracking-widest text-slate-400">Top clients (CA)</h3>
+          <ul className="space-y-2">
+            {stats.kpi.topClients.map((c, i) => (
+              <li key={i} className="flex justify-between text-sm font-bold text-slate-800">
+                <span>{c.clientName || '—'}</span>
+                <span className="font-mono text-emerald-700">
+                  {c.totalSales.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="relative overflow-hidden rounded-[2rem] border border-slate-200/60 bg-white p-4 shadow-sm sm:rounded-[2.5rem] sm:p-8 lg:col-span-2">

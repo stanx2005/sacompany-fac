@@ -1,7 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, FileText, Search, Calendar, User, Download, CheckCircle, X, RefreshCw, Truck, ShoppingCart, ArrowRight, Save } from 'lucide-react';
-import { generatePDF } from '../utils/pdfGenerator';
+import {
+  Plus,
+  FileText,
+  Search,
+  Download,
+  X,
+  Truck,
+  ShoppingCart,
+  Save,
+  History,
+  Archive,
+  CheckCircle2,
+  Trash2,
+} from 'lucide-react';
+import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
+import { SendDocumentActions } from '../components/SendDocumentActions';
+import { useAuthStore } from '../store/authStore';
 
 interface Invoice {
   id: number;
@@ -19,11 +34,27 @@ interface Invoice {
   totalPaid?: number;
   remaining?: number;
   paymentStatus?: 'unpaid' | 'partial' | 'paid';
+  archived?: number;
+  completed?: number;
 }
 
+type TimelineEvent = {
+  kind: 'cash' | 'cheque';
+  date: string;
+  amount: number;
+  reference: string;
+  detail: string | null;
+  dueDate?: string;
+};
+
 const Invoices = () => {
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin';
   const CREATE_CLIENT_OPTION = '__create_client__';
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [timelineInvoice, setTimelineInvoice] = useState<Invoice | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -53,8 +84,9 @@ const Invoices = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      const invUrl = includeArchived ? '/invoices?includeArchived=true' : '/invoices';
       const [invoicesRes, clientsRes, productsRes, suppliersRes] = await Promise.all([
-        api.get('/invoices'),
+        api.get(invUrl),
         api.get('/clients'),
         api.get('/products'),
         api.get('/suppliers')
@@ -72,23 +104,93 @@ const Invoices = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [includeArchived]);
+
+  const openTimeline = async (invoice: Invoice) => {
+    try {
+      const { data } = await api.get(`/invoices/${invoice.id}/payment-timeline`);
+      setTimelineEvents(data.events || []);
+      setTimelineInvoice(invoice);
+    } catch (e) {
+      console.error(e);
+      alert('Impossible de charger le paiement.');
+    }
+  };
+
+  const toggleArchive = async (invoice: Invoice, archived: boolean) => {
+    if (!isAdmin) return;
+    if (!window.confirm(archived ? 'Archiver cette facture ?' : 'Restaurer cette facture ?')) return;
+    try {
+      await api.patch(`/invoices/${invoice.id}/archive`, { archived });
+      fetchData();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Erreur.');
+    }
+  };
+
+  const toggleInvoiceCompleted = async (invoice: Invoice, completed: boolean) => {
+    const ok = window.confirm(
+      completed
+        ? 'Marquer cette facture comme terminée ? Vous pourrez ensuite la supprimer (admin).'
+        : 'Retirer le marquage « terminée » ?'
+    );
+    if (!ok) return;
+    try {
+      await api.patch(`/invoices/${invoice.id}/complete`, { completed });
+      fetchData();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Erreur.');
+    }
+  };
+
+  const handleDeleteInvoice = async (invoice: Invoice) => {
+    if (!isAdmin) return;
+    if (!Number(invoice.completed || 0)) return;
+    if (!window.confirm(`Supprimer définitivement la facture ${invoice.invoiceNumber} ?`)) return;
+    try {
+      await api.delete(`/invoices/${invoice.id}`);
+      fetchData();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Erreur.');
+    }
+  };
 
   const handleDownloadPDF = async (invoice: Invoice) => {
     try {
-      const response = await api.get(`/invoices/${invoice.id}/items`);
-      const items = response.data;
+      const [itemsRes, settingsRes] = await Promise.all([
+        api.get(`/invoices/${invoice.id}/items`),
+        api.get('/settings').catch(() => ({ data: {} })),
+      ]);
+      const items = itemsRes.data;
       const entity = {
         name: invoice.clientName,
         taxNumber: invoice.taxNumber,
         address: invoice.address,
         phone: invoice.phone
       };
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      generatePDF("FACTURE", invoice, items, entity, user);
+      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      const pb = settingsRes.data?.pdfBranding || {};
+      generatePDF("FACTURE", invoice, items, entity, { ...u, ...pb });
     } catch (error) {
       console.error('Erreur PDF:', error);
     }
+  };
+
+  const prepareInvoicePdf = async (invoice: Invoice) => {
+    const [itemsRes, settingsRes] = await Promise.all([
+      api.get(`/invoices/${invoice.id}/items`),
+      api.get('/settings').catch(() => ({ data: {} })),
+    ]);
+    const items = itemsRes.data;
+    const entity = {
+      name: invoice.clientName,
+      taxNumber: invoice.taxNumber,
+      address: invoice.address,
+      phone: invoice.phone,
+    };
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    const pb = settingsRes.data?.pdfBranding || {};
+    return generatePDFAsBase64('FACTURE', invoice, items, entity, { ...u, ...pb });
   };
 
   const handleConvertToBL = async (id: number) => {
@@ -231,7 +333,18 @@ const Invoices = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-3">
+            {isAdmin && (
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={includeArchived}
+                  onChange={(e) => setIncludeArchived(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                Afficher archivées
+              </label>
+            )}
             <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Trier:</span>
             <select 
               className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -272,6 +385,11 @@ const Invoices = () => {
                           <FileText className="w-4 h-4" />
                         </div>
                         <span className="font-black text-slate-900 tracking-tight">{invoice.invoiceNumber}</span>
+                        {Number(invoice.completed || 0) ? (
+                          <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-700">
+                            Terminée
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-8 py-6 font-bold text-slate-700">{invoice.clientName}</td>
@@ -286,18 +404,64 @@ const Invoices = () => {
                       {Number(invoice.remaining ?? invoice.totalInclTax).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
                     </td>
                     <td className="px-8 py-6">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        invoice.paymentStatus === 'paid'
-                          ? 'bg-emerald-50 text-emerald-600'
-                          : invoice.paymentStatus === 'partial'
-                          ? 'bg-blue-50 text-blue-600'
-                          : 'bg-amber-50 text-amber-600'
-                      }`}>
-                        {invoice.paymentStatus === 'paid' ? 'Payee' : invoice.paymentStatus === 'partial' ? 'Partielle' : 'En attente'}
-                      </span>
+                      {Number(invoice.completed || 0) ? (
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-700">
+                          Terminée
+                        </span>
+                      ) : (
+                        <span
+                          className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            invoice.paymentStatus === 'paid'
+                              ? 'bg-emerald-50 text-emerald-600'
+                              : invoice.paymentStatus === 'partial'
+                                ? 'bg-blue-50 text-blue-600'
+                                : 'bg-amber-50 text-amber-600'
+                          }`}
+                        >
+                          {invoice.paymentStatus === 'paid'
+                            ? 'Payée'
+                            : invoice.paymentStatus === 'partial'
+                              ? 'Partielle'
+                              : 'En attente'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end space-x-1">
+                        <button onClick={() => openTimeline(invoice)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Historique paiements">
+                          <History className="w-5 h-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleInvoiceCompleted(invoice, !Number(invoice.completed || 0))}
+                          className={`p-2 rounded-xl transition-all ${
+                            Number(invoice.completed || 0)
+                              ? 'text-violet-600 bg-violet-50 hover:bg-violet-100'
+                              : 'text-slate-400 hover:text-violet-600 hover:bg-violet-50'
+                          }`}
+                          title={Number(invoice.completed || 0) ? 'Retirer le marquage terminé' : 'Marquer comme terminée'}
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => toggleArchive(invoice, !invoice.archived)}
+                            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all"
+                            title={invoice.archived ? 'Restaurer' : 'Archiver'}
+                          >
+                            <Archive className="w-5 h-5" />
+                          </button>
+                        )}
+                        {isAdmin && Number(invoice.completed || 0) ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteInvoice(invoice)}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                            title="Supprimer définitivement"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        ) : null}
                         <button onClick={() => handleConvertToBL(invoice.id)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Convertir en BL">
                           <Truck className="w-5 h-5" />
                         </button>
@@ -307,6 +471,13 @@ const Invoices = () => {
                         <button onClick={() => handleDownloadPDF(invoice)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
                           <Download className="w-5 h-5" />
                         </button>
+                        <SendDocumentActions
+                          preparePdf={() => prepareInvoicePdf(invoice)}
+                          recipientType="client"
+                          recipientId={invoice.clientId}
+                          subject={`Facture ${invoice.invoiceNumber}`}
+                          caption={`Bonjour, veuillez trouver ci-joint la facture ${invoice.invoiceNumber}.`}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -316,6 +487,36 @@ const Invoices = () => {
           </table>
         </div>
       </div>
+
+      {timelineInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 p-6">
+              <h2 className="text-lg font-black text-slate-800">Paiements — {timelineInvoice.invoiceNumber}</h2>
+              <button type="button" onClick={() => setTimelineInvoice(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="max-h-[60vh] space-y-3 overflow-y-auto p-6">
+              {timelineEvents.length === 0 ? (
+                <p className="text-center text-sm text-slate-500">Aucun paiement lié.</p>
+              ) : (
+                timelineEvents.map((ev, i) => (
+                  <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 text-sm">
+                    <div className="flex justify-between font-black text-slate-800">
+                      <span>{ev.kind === 'cash' ? 'Espèces' : 'Chèque'}</span>
+                      <span>{ev.amount.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+                    </div>
+                    <div className="mt-1 text-slate-600">{ev.date}</div>
+                    <div className="font-mono text-xs text-slate-500">{ev.reference}</div>
+                    {ev.detail && <div className="text-xs text-slate-500">{ev.detail}</div>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Convert to BC Modal */}
       {isConvertModalOpen && (

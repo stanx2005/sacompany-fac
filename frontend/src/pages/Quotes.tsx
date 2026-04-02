@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { Plus, Search, FileText, Calendar, User, Download, CheckCircle, X, History, MessageSquare, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, Save } from 'lucide-react';
-import { generatePDF } from '../utils/pdfGenerator';
+import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
+import { SendDocumentActions } from '../components/SendDocumentActions';
 
 interface Quote {
   id: number;
@@ -66,8 +67,11 @@ const Quotes = () => {
 
   const handleDownloadPDF = async (quote: Quote) => {
     try {
-      const response = await api.get(`/quotes/${quote.id}/items`);
-      const items = response.data;
+      const [itemsRes, settingsRes] = await Promise.all([
+        api.get(`/quotes/${quote.id}/items`),
+        api.get('/settings').catch(() => ({ data: {} })),
+      ]);
+      const items = itemsRes.data;
       const entity = {
         name: quote.clientName,
         taxNumber: quote.taxNumber,
@@ -75,10 +79,28 @@ const Quotes = () => {
         phone: quote.phone
       };
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      generatePDF("DEVIS", quote, items, entity, user);
+      const pb = settingsRes.data?.pdfBranding || {};
+      generatePDF("DEVIS", quote, items, entity, { ...user, ...pb });
     } catch (error) {
       console.error('Erreur PDF:', error);
     }
+  };
+
+  const prepareQuotePdf = async (quote: Quote) => {
+    const [itemsRes, settingsRes] = await Promise.all([
+      api.get(`/quotes/${quote.id}/items`),
+      api.get('/settings').catch(() => ({ data: {} })),
+    ]);
+    const items = itemsRes.data;
+    const entity = {
+      name: quote.clientName,
+      taxNumber: quote.taxNumber,
+      address: quote.address,
+      phone: quote.phone,
+    };
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    const pb = settingsRes.data?.pdfBranding || {};
+    return generatePDFAsBase64('DEVIS', quote, items, entity, { ...u, ...pb });
   };
 
   const handleOpenEditModal = async (quote: Quote) => {
@@ -309,6 +331,13 @@ const Quotes = () => {
                         <button onClick={() => handleDownloadPDF(quote)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
                           <Download className="w-5 h-5" />
                         </button>
+                        <SendDocumentActions
+                          preparePdf={() => prepareQuotePdf(quote)}
+                          recipientType="client"
+                          recipientId={quote.clientId}
+                          subject={`Devis ${quote.quoteNumber}`}
+                          caption={`Bonjour, veuillez trouver ci-joint le devis ${quote.quoteNumber}.`}
+                        />
                       </div>
                     </td>
                   </tr>

@@ -1,6 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, Calendar, Check, X, CreditCard, ArrowDownLeft, ArrowUpRight, AlertCircle, RotateCcw, Save, Link2 } from 'lucide-react';
+import { translateChequeStatus } from '../utils/chequeLabels';
+import {
+  Plus,
+  Calendar,
+  Check,
+  X,
+  CreditCard,
+  ArrowDownLeft,
+  ArrowUpRight,
+  AlertCircle,
+  RotateCcw,
+  Save,
+  Link2,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+} from 'lucide-react';
 
 interface Cheque {
   id: number;
@@ -16,6 +32,7 @@ interface Cheque {
   supplierName: string | null;
   invoiceId?: number | null;
   invoiceNumber?: string | null;
+  archived?: number;
 }
 
 interface InvoiceRow {
@@ -61,7 +78,7 @@ const Cheques = () => {
     try {
       setLoading(true);
       const [chequesRes, clientsRes, suppliersRes, invoicesRes] = await Promise.all([
-        api.get('/cheques'),
+        api.get('/cheques', { params: { includeArchived: 'true' } }),
         api.get('/clients'),
         api.get('/suppliers'),
         api.get('/invoices')
@@ -136,6 +153,32 @@ const Cheques = () => {
     }
   };
 
+  const toggleArchive = async (cheque: Cheque, archived: boolean) => {
+    const ok = window.confirm(
+      archived ? 'Archiver ce chèque ? Il disparaîtra des listes actives et des totaux.' : 'Restaurer ce chèque ?'
+    );
+    if (!ok) return;
+    try {
+      await api.patch(`/cheques/${cheque.id}/archive`, { archived });
+      fetchData();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur.');
+    }
+  };
+
+  const removeCheque = async (cheque: Cheque) => {
+    const ok = window.confirm(
+      `Supprimer définitivement le chèque n° ${cheque.chequeNumber} ? Les rappels liés seront détachés. Cette action est irréversible.`
+    );
+    if (!ok) return;
+    try {
+      await api.delete(`/cheques/${cheque.id}`);
+      fetchData();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur lors de la suppression.');
+    }
+  };
+
   const openCreateClientModal = () => {
     setNewClientData({ name: '', email: '', phone: '', address: '', taxNumber: '' });
     setIsCreateClientOpen(true);
@@ -161,22 +204,32 @@ const Cheques = () => {
     }
   };
 
-  const ChequeTable = ({ type }: { type: 'incoming' | 'outgoing' }) => {
-    const filtered = cheques.filter(c => c.type === type);
-    const title = type === 'incoming' ? "Chèques Reçus (Clients)" : "Chèques Émis (Fournisseurs)";
+  const ChequeTable = ({ type, mode }: { type: 'incoming' | 'outgoing'; mode: 'active' | 'archived' }) => {
+    const filtered = cheques.filter((c) => {
+      if (c.type !== type) return false;
+      const isArchived = Number(c.archived || 0);
+      return mode === 'archived' ? isArchived === 1 : isArchived === 0;
+    });
+    const baseTitle = type === 'incoming' ? 'Chèques reçus (clients)' : 'Chèques émis (fournisseurs)';
+    const title =
+      mode === 'archived' ? `Archives — ${baseTitle}` : baseTitle;
     const colorClass = type === 'incoming' ? "text-emerald-600 bg-emerald-50" : "text-amber-600 bg-amber-50";
     const Icon = type === 'incoming' ? ArrowDownLeft : ArrowUpRight;
 
     return (
-      <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden mb-10">
+      <div
+        className={`bg-white rounded-[2.5rem] border shadow-sm overflow-hidden mb-10 ${
+          mode === 'archived' ? 'border-slate-200/80 opacity-95' : 'border-slate-200/60'
+        }`}
+      >
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
           <div className="flex items-center space-x-4">
             <div className={`p-3 rounded-2xl ${colorClass} shadow-sm`}>
-              <Icon className="w-6 h-6" />
+              {mode === 'archived' ? <Archive className="w-6 h-6" /> : <Icon className="w-6 h-6" />}
             </div>
             <div>
               <h2 className="text-lg font-black text-slate-900 tracking-tight">{title}</h2>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{filtered.length} chèques au total</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{filtered.length} chèque{filtered.length !== 1 ? 's' : ''}</p>
             </div>
           </div>
         </div>
@@ -198,7 +251,11 @@ const Cheques = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
               {filtered.length === 0 ? (
-                <tr><td colSpan={type === 'incoming' ? 8 : 7} className="px-8 py-20 text-center text-slate-400 font-medium">Aucun chèque enregistré.</td></tr>
+                <tr>
+                  <td colSpan={type === 'incoming' ? 8 : 7} className="px-8 py-20 text-center text-slate-400 font-medium">
+                    {mode === 'archived' ? 'Aucun chèque archivé.' : 'Aucun chèque enregistré.'}
+                  </td>
+                </tr>
               ) : (
                 filtered.map((cheque) => (
                   <tr key={cheque.id} className={`hover:bg-slate-50/50 transition-colors ${cheque.isPaid ? 'bg-slate-50/30' : ''}`}>
@@ -207,8 +264,9 @@ const Cheques = () => {
                         <input 
                           type="checkbox" 
                           checked={cheque.isPaid === 1}
+                          disabled={mode === 'archived'}
                           onChange={() => togglePaid(cheque.id, cheque.isPaid)}
-                          className="w-5 h-5 text-emerald-600 rounded-lg border-slate-200 focus:ring-emerald-500 cursor-pointer transition-all"
+                          className="w-5 h-5 text-emerald-600 rounded-lg border-slate-200 focus:ring-emerald-500 cursor-pointer transition-all disabled:cursor-not-allowed disabled:opacity-40"
                         />
                       </div>
                     </td>
@@ -246,24 +304,54 @@ const Cheques = () => {
                         cheque.status === 'bounced' ? 'bg-rose-50 text-rose-600' :
                         'bg-amber-50 text-amber-600'
                       }`}>
-                        {cheque.status === 'cleared' ? 'Encaissé' : cheque.status === 'bounced' ? 'Impayé' : 'En attente'}
+                        {translateChequeStatus(cheque.status)}
                       </span>
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end space-x-1">
-                        {cheque.status === 'pending' ? (
+                        {mode === 'archived' ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleArchive(cheque, false)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-800"
+                            title="Restaurer dans le registre actif"
+                          >
+                            <ArchiveRestore className="h-4 w-4" />
+                            Restaurer
+                          </button>
+                        ) : (
                           <>
-                            <button onClick={() => updateStatus(cheque.id, 'cleared')} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Marquer comme encaissé">
-                              <Check className="w-4 h-4" />
+                            {cheque.status === 'pending' ? (
+                              <>
+                                <button onClick={() => updateStatus(cheque.id, 'cleared')} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Marquer comme encaissé">
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => updateStatus(cheque.id, 'bounced')} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Marquer comme impayé">
+                                  <AlertCircle className="w-4 h-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <button onClick={() => updateStatus(cheque.id, 'pending')} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Remettre en attente">
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleArchive(cheque, true)}
+                              className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-all"
+                              title="Archiver"
+                            >
+                              <Archive className="w-4 h-4" />
                             </button>
-                            <button onClick={() => updateStatus(cheque.id, 'bounced')} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Marquer comme impayé">
-                              <AlertCircle className="w-4 h-4" />
+                            <button
+                              type="button"
+                              onClick={() => removeCheque(cheque)}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                              title="Supprimer définitivement"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </>
-                        ) : (
-                          <button onClick={() => updateStatus(cheque.id, 'pending')} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Remettre en attente">
-                            <RotateCcw className="w-4 h-4" />
-                          </button>
                         )}
                       </div>
                     </td>
@@ -293,8 +381,14 @@ const Cheques = () => {
         </button>
       </div>
 
-      <ChequeTable type="incoming" />
-      <ChequeTable type="outgoing" />
+      <ChequeTable type="incoming" mode="active" />
+      <ChequeTable type="outgoing" mode="active" />
+      {cheques.some((c) => c.type === 'incoming' && Number(c.archived || 0)) ? (
+        <ChequeTable type="incoming" mode="archived" />
+      ) : null}
+      {cheques.some((c) => c.type === 'outgoing' && Number(c.archived || 0)) ? (
+        <ChequeTable type="outgoing" mode="archived" />
+      ) : null}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

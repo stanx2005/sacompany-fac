@@ -1,0 +1,432 @@
+import React, { useEffect, useState } from 'react';
+import api from '../services/api';
+import { useAuthStore } from '../store/authStore';
+import { Save, Settings2, Download, Upload, Users, UserPlus, Mail } from 'lucide-react';
+
+type Numbering = Record<string, string>;
+
+type AdminUserRow = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  createdAt?: string | null;
+};
+
+const defaultKeys = [
+  ['invoice', 'Facture standard'],
+  ['invoiceTab', 'Facture (carnet)'],
+  ['invoiceDevis', 'Facture depuis devis'],
+  ['invoiceConv', 'Facture depuis BL'],
+  ['bl', 'Bon de livraison'],
+  ['blConv', 'BL (conversion)'],
+  ['bc', 'Bon de commande'],
+  ['bcConv', 'BC (conversion facture)'],
+  ['quote', 'Devis'],
+  ['cash', 'Paiement espèces'],
+  ['bonTab', 'Bon carnet (PDF)'],
+];
+
+const SettingsPage = () => {
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin';
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [numbering, setNumbering] = useState<Numbering>({});
+  const [footerLegal, setFooterLegal] = useState('');
+  const [logoDataUrl, setLogoDataUrl] = useState('');
+  const [adminUsers, setAdminUsers] = useState<AdminUserRow[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [newUser, setNewUser] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'staff' as 'admin' | 'staff',
+  });
+  const [messaging, setMessaging] = useState<{
+    resendConfigured: boolean;
+    gmailConfigured: boolean;
+    emailConfigured: boolean;
+    activeEmailProvider: 'resend' | 'gmail' | null;
+    whatsappConfigured: boolean;
+    ultramsgConfigured: boolean;
+    activeWhatsAppProvider: 'ultramsg' | 'meta' | 'twilio' | null;
+    emailFromHint: string | null;
+  } | null>(null);
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/settings');
+      setNumbering(data.numbering || {});
+      setFooterLegal(data.pdfBranding?.footerLegal || '');
+      setLogoDataUrl(data.pdfBranding?.logoDataUrl || '');
+      if (data.messaging) setMessaging(data.messaging);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const loadUsers = async () => {
+    if (!isAdmin) return;
+    try {
+      setUsersLoading(true);
+      const { data } = await api.get('/admin/users');
+      setAdminUsers(Array.isArray(data) ? data : []);
+    } catch {
+      setAdminUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) loadUsers();
+  }, [isAdmin]);
+
+  const handleSave = async () => {
+    if (!isAdmin) return;
+    if (logoDataUrl.length > 12 * 1024 * 1024) {
+      alert('Logo trop volumineux (max. ~12 Mo en base64). Utilisez une image plus petite ou le bouton « Choisir une image » pour compression automatique.');
+      return;
+    }
+    try {
+      setSaving(true);
+      await api.put('/settings', {
+        numbering,
+        pdfBranding: { footerLegal, logoDataUrl },
+      });
+      alert('Paramètres enregistrés.');
+    } catch (e: any) {
+      const d = e?.response?.data?.detail;
+      const msg = e?.response?.data?.message || 'Erreur enregistrement.';
+      alert(d ? `${msg}\n\n${d}` : msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 320;
+        const maxH = 120;
+        let w = img.width;
+        let h = img.height;
+        const ratio = Math.min(maxW / w, maxH / h, 1);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
+        try {
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          setLogoDataUrl(dataUrl);
+        } catch {
+          alert('Impossible de convertir cette image.');
+        }
+      };
+      img.onerror = () => alert('Image invalide.');
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) return;
+    const name = newUser.name.trim();
+    const email = newUser.email.trim();
+    if (!name || !email || !newUser.password) {
+      alert('Renseignez nom, email et mot de passe.');
+      return;
+    }
+    try {
+      setCreatingUser(true);
+      await api.post('/admin/users', {
+        name,
+        email,
+        password: newUser.password,
+        role: newUser.role,
+      });
+      setNewUser({ name: '', email: '', password: '', role: 'staff' });
+      await loadUsers();
+      alert('Utilisateur créé.');
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'Erreur création utilisateur.';
+      alert(msg);
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  const exportJson = async () => {
+    if (!isAdmin) return;
+    try {
+      const { data } = await api.get('/admin/export-json');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `export-${Date.now()}.json`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Export impossible (droits admin requis).');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-slate-500 font-medium">
+        Chargement des paramètres…
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-8">
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Paramètres</h1>
+        <p className="mt-1 font-medium text-slate-500">
+          Préfixes de numérotation et texte PDF. Les modifications de numérotation s’appliquent aux nouveaux documents.
+        </p>
+      </div>
+
+      <div className="rounded-[2rem] border border-slate-200/60 bg-white p-6 shadow-sm sm:p-8">
+        <div className="mb-4 flex items-center gap-2 text-slate-800">
+          <Mail className="h-6 w-6 text-sky-600" />
+          <h2 className="text-lg font-black">Rappels clients (e-mail & WhatsApp)</h2>
+        </div>
+        {messaging ? (
+          <div className="flex flex-col gap-2 text-sm font-bold">
+            <p className="text-slate-800">
+              EMAIL :{' '}
+              <span className={messaging.emailConfigured ? 'text-emerald-600' : 'text-red-600'}>
+                {messaging.emailConfigured ? 'actif' : 'inactif'}
+              </span>
+            </p>
+            <p className="text-slate-800">
+              WHATSAPP :{' '}
+              <span className={messaging.whatsappConfigured ? 'text-emerald-600' : 'text-red-600'}>
+                {messaging.whatsappConfigured ? 'actif' : 'inactif'}
+              </span>
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">Statut indisponible.</p>
+        )}
+      </div>
+
+      {isAdmin && (
+        <div className="rounded-[2rem] border border-slate-200/60 bg-white p-6 shadow-sm sm:p-8">
+          <div className="mb-6 flex items-center gap-2 text-slate-800">
+            <Users className="h-6 w-6 text-indigo-600" />
+            <h2 className="text-lg font-black">Utilisateurs</h2>
+          </div>
+          <p className="mb-6 text-sm text-slate-500">
+            Créez des comptes pour votre équipe. Les nouveaux utilisateurs se connectent avec l’email et le mot de passe
+            définis ici.
+          </p>
+
+          <form onSubmit={handleCreateUser} className="mb-8 grid gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/30 p-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Nom</label>
+              <input
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                value={newUser.name}
+                onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Email</label>
+              <input
+                type="email"
+                required
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Mot de passe</label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={6}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                value={newUser.password}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Rôle</label>
+              <select
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                value={newUser.role}
+                onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'admin' | 'staff' })}
+              >
+                <option value="staff">staff</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <button
+                type="submit"
+                disabled={creatingUser}
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 font-black text-white shadow-lg shadow-indigo-100 transition hover:bg-indigo-700 disabled:opacity-60"
+              >
+                <UserPlus className="h-5 w-5" />
+                {creatingUser ? 'Création…' : 'Créer l’utilisateur'}
+              </button>
+            </div>
+          </form>
+
+          <h3 className="mb-3 text-xs font-black uppercase tracking-widest text-slate-400">Comptes existants</h3>
+          {usersLoading ? (
+            <p className="text-sm text-slate-500">Chargement…</p>
+          ) : adminUsers.length === 0 ? (
+            <p className="text-sm text-slate-500">Aucun utilisateur.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-100">
+              {adminUsers.map((u) => (
+                <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+                  <span className="font-bold text-slate-900">{u.name}</span>
+                  <span className="font-mono text-slate-600">{u.email}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${
+                      u.role === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {u.role}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="rounded-[2rem] border border-slate-200/60 bg-white p-6 shadow-sm sm:p-8">
+        <div className="mb-6 flex items-center gap-2 text-slate-800">
+          <Settings2 className="h-6 w-6 text-emerald-600" />
+          <h2 className="text-lg font-black">Numérotation</h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {defaultKeys.map(([key, label]) => (
+            <div key={key}>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                {label}
+              </label>
+              <input
+                type="text"
+                disabled={!isAdmin}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
+                value={numbering[key] ?? ''}
+                onChange={(e) => setNumbering({ ...numbering, [key]: e.target.value })}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-slate-200/60 bg-white p-6 shadow-sm sm:p-8">
+        <h2 className="mb-4 text-lg font-black text-slate-800">PDF — pied de page & logo</h2>
+        <p className="mb-4 text-sm text-slate-500">
+          Texte légal en bas des PDF (optionnel). Pour le logo, préférez le bouton ci-dessous : une image lourde ou un lien{' '}
+          <code className="rounded bg-slate-100 px-1">https://…</code> seul ne fonctionne pas dans les PDF — il faut une{' '}
+          <strong>data URL</strong> (<code className="rounded bg-slate-100 px-1">data:image/jpeg;base64,…</code>), générée
+          automatiquement depuis un fichier.
+        </p>
+        <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+          Pied de page (légal)
+        </label>
+        <textarea
+          rows={3}
+          disabled={!isAdmin}
+          className="mb-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
+          value={footerLegal}
+          onChange={(e) => setFooterLegal(e.target.value)}
+        />
+        <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Logo</label>
+        {isAdmin && (
+          <label className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-2.5 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100">
+            <Upload className="h-4 w-4" />
+            Choisir une image (redimensionnée automatiquement)
+            <input type="file" accept="image/*" className="hidden" onChange={handleLogoFile} />
+          </label>
+        )}
+        {logoDataUrl ? (
+          <div className="mb-4 flex flex-wrap items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+            <img src={logoDataUrl} alt="Aperçu logo" className="h-16 max-w-[220px] object-contain" />
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setLogoDataUrl('')}
+                className="text-sm font-bold text-rose-600 hover:underline"
+              >
+                Retirer le logo
+              </button>
+            )}
+          </div>
+        ) : null}
+        <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+          Logo (data URL — collage manuel si besoin)
+        </label>
+        <textarea
+          rows={3}
+          disabled={!isAdmin}
+          placeholder="data:image/jpeg;base64,..."
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
+          value={logoDataUrl}
+          onChange={(e) => setLogoDataUrl(e.target.value)}
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        {isAdmin ? (
+          <>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-8 py-3.5 font-black text-white shadow-lg shadow-emerald-100 transition hover:bg-emerald-700 disabled:opacity-60"
+            >
+              <Save className="h-5 w-5" />
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+            <button
+              type="button"
+              onClick={exportJson}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3.5 font-bold text-slate-700 transition hover:bg-slate-50"
+            >
+              <Download className="h-5 w-5" />
+              Export JSON (sauvegarde)
+            </button>
+          </>
+        ) : (
+          <p className="text-sm font-medium text-amber-700">
+            Connectez-vous en administrateur pour modifier les paramètres et exporter les données.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default SettingsPage;

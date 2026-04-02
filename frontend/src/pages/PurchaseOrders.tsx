@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { Plus, Search, FileText, Calendar, User, Download, CheckCircle, X, ShoppingCart, RefreshCw, Truck, Save } from 'lucide-react';
-import { generatePDF } from '../utils/pdfGenerator';
+import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
+import { SendDocumentActions } from '../components/SendDocumentActions';
 
 interface PurchaseOrder {
   id: number;
@@ -61,8 +62,11 @@ const PurchaseOrders = () => {
 
   const handleDownloadPDF = async (order: PurchaseOrder) => {
     try {
-      const response = await api.get(`/purchase-orders/${order.id}/items`);
-      const items = response.data;
+      const [itemsRes, settingsRes] = await Promise.all([
+        api.get(`/purchase-orders/${order.id}/items`),
+        api.get('/settings').catch(() => ({ data: {} })),
+      ]);
+      const items = itemsRes.data;
       const entity = {
         name: order.supplierName,
         taxNumber: order.taxNumber,
@@ -70,10 +74,28 @@ const PurchaseOrders = () => {
         phone: order.phone
       };
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      generatePDF("BON DE COMMANDE", order, items, entity, user);
+      const pb = settingsRes.data?.pdfBranding || {};
+      generatePDF("BON DE COMMANDE", order, items, entity, { ...user, ...pb });
     } catch (error) {
       console.error('Erreur PDF:', error);
     }
+  };
+
+  const preparePurchaseOrderPdf = async (order: PurchaseOrder) => {
+    const [itemsRes, settingsRes] = await Promise.all([
+      api.get(`/purchase-orders/${order.id}/items`),
+      api.get('/settings').catch(() => ({ data: {} })),
+    ]);
+    const items = itemsRes.data;
+    const entity = {
+      name: order.supplierName,
+      taxNumber: order.taxNumber,
+      address: order.address,
+      phone: order.phone,
+    };
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    const pb = settingsRes.data?.pdfBranding || {};
+    return generatePDFAsBase64('BON DE COMMANDE', order, items, entity, { ...u, ...pb });
   };
 
   const handleOpenConvertBL = (id: number) => {
@@ -242,6 +264,13 @@ const PurchaseOrders = () => {
                         <button onClick={() => handleDownloadPDF(order)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
                           <Download className="w-5 h-5" />
                         </button>
+                        <SendDocumentActions
+                          preparePdf={() => preparePurchaseOrderPdf(order)}
+                          recipientType="supplier"
+                          recipientId={order.supplierId}
+                          subject={`Bon de commande ${order.orderNumber}`}
+                          caption={`Bonjour, veuillez trouver ci-joint le bon de commande ${order.orderNumber}.`}
+                        />
                       </div>
                     </td>
                   </tr>

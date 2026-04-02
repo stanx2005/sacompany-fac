@@ -27,6 +27,10 @@ const Products = () => {
     taxRate: '20.00',
     stock: '0'
   });
+  const [importPreview, setImportPreview] = useState<{
+    valid: Array<{ name: string; description: string; price: number; taxRate: number; stock: number }>;
+    errors: Array<{ row: number; message: string }>;
+  } | null>(null);
 
   const fetchProducts = async () => {
     try {
@@ -52,14 +56,39 @@ const Products = () => {
       header: true,
       complete: async (results) => {
         try {
-          await api.post('/products/bulk', { products: results.data });
-          alert('Importation réussie !');
-          fetchProducts();
+          const { data } = await api.post('/products/bulk-preview', { products: results.data });
+          setImportPreview({
+            valid: data.valid || [],
+            errors: data.errors || [],
+          });
         } catch (error) {
-          alert('Erreur lors de l\'importation CSV.');
+          alert('Erreur lors de la validation CSV.');
         }
-      }
+      },
     });
+    e.target.value = '';
+  };
+
+  const commitBulkImport = async () => {
+    if (!importPreview?.valid.length) {
+      setImportPreview(null);
+      return;
+    }
+    try {
+      const products = importPreview.valid.map((v) => ({
+        Designation: v.name,
+        Description: v.description,
+        PrixHT: v.price,
+        TVA: v.taxRate,
+        Stock: v.stock,
+      }));
+      await api.post('/products/bulk', { products });
+      alert('Importation réussie !');
+      setImportPreview(null);
+      fetchProducts();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur import.');
+    }
   };
 
   const handleOpenModal = (product: Product | null = null) => {
@@ -105,7 +134,9 @@ const Products = () => {
       try {
         await api.delete(`/products/${id}`);
         fetchProducts();
-      } catch (error) {
+      } catch (error: any) {
+        const msg = error?.response?.data?.message || 'Suppression impossible.';
+        alert(msg);
         console.error('Erreur lors de la suppression du produit:', error);
       }
     }
@@ -224,6 +255,55 @@ const Products = () => {
           </table>
         </div>
       </div>
+
+      {importPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+            <div className="border-b border-slate-100 bg-slate-50/50 p-6">
+              <h2 className="text-xl font-black text-slate-800">Prévisualisation import CSV</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {importPreview.valid.length} ligne(s) valide(s), {importPreview.errors.length} erreur(s).
+              </p>
+            </div>
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto p-6">
+              {importPreview.errors.length > 0 && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
+                  {importPreview.errors.map((err, i) => (
+                    <div key={i}>
+                      Ligne {err.row}: {err.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {importPreview.valid.slice(0, 50).map((v, i) => (
+                <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2 text-sm">
+                  <span className="font-bold">{v.name}</span> — {v.price} MAD HT — TVA {v.taxRate}% — Stock {v.stock}
+                </div>
+              ))}
+              {importPreview.valid.length > 50 && (
+                <p className="text-xs text-slate-500">… et {importPreview.valid.length - 50} autre(s)</p>
+              )}
+            </div>
+            <div className="flex gap-3 border-t border-slate-100 p-6">
+              <button
+                type="button"
+                onClick={() => setImportPreview(null)}
+                className="flex-1 rounded-2xl border border-slate-200 py-3 font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={!importPreview.valid.length}
+                onClick={commitBulkImport}
+                className="flex-1 rounded-2xl bg-indigo-600 py-3 font-bold text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Importer {importPreview.valid.length} produit(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

@@ -15,6 +15,9 @@ import PurchaseOrders from './pages/PurchaseOrders';
 
 import Quotes from './pages/Quotes';
 import Profile from './pages/Profile';
+import SettingsPage from './pages/Settings';
+import ActivityLog from './pages/ActivityLog';
+import Reminders from './pages/Reminders';
 
 function App() {
   const user = useAuthStore((state) => state.user);
@@ -38,6 +41,9 @@ function App() {
         <Route path="/cash-payments" element={<CashPayments />} />
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/activity" element={<ActivityLog />} />
+        <Route path="/reminders" element={<Reminders />} />
         <Route path="*" element={
           <div className="flex flex-col items-center justify-center h-full space-y-4">
             <h2 className="text-2xl font-bold text-gray-800">Page non trouvée</h2>

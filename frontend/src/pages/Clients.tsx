@@ -1,7 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, Edit2, Trash2, Search, X, History, MessageSquare, FileText, ShoppingCart, Truck, Calendar, Upload, Download, ChevronRight, Save } from 'lucide-react';
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Search,
+  X,
+  History,
+  MessageSquare,
+  FileText,
+  ShoppingCart,
+  Truck,
+  Calendar,
+  Upload,
+  Download,
+  ChevronRight,
+  Save,
+  CheckCircle2,
+  Send,
+} from 'lucide-react';
 import Papa from 'papaparse';
+import { useAuthStore } from '../store/authStore';
 
 interface Client {
   id: number;
@@ -10,9 +29,12 @@ interface Client {
   phone: string | null;
   address: string | null;
   taxNumber: string | null;
+  completed?: number;
 }
 
 const Clients = () => {
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin';
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,7 +43,18 @@ const Clients = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [historyData, setHistoryData] = useState<any[]>([]);
-  
+  const [msgStatus, setMsgStatus] = useState<{
+    emailConfigured: boolean;
+    resendConfigured: boolean;
+    gmailConfigured: boolean;
+    whatsappConfigured: boolean;
+  } | null>(null);
+  const [reminderClient, setReminderClient] = useState<Client | null>(null);
+  const [reminderChannel, setReminderChannel] = useState<'email' | 'whatsapp'>('email');
+  const [reminderKind, setReminderKind] = useState<'paiement' | 'livraison' | 'facture'>('facture');
+  const [reminderCustom, setReminderCustom] = useState('');
+  const [sendingReminder, setSendingReminder] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -44,6 +77,23 @@ const Clients = () => {
 
   useEffect(() => {
     fetchClients();
+  }, []);
+
+  useEffect(() => {
+    const loadMsg = async () => {
+      try {
+        const { data } = await api.get('/clients/messaging/status');
+        setMsgStatus({
+          emailConfigured: Boolean(data?.emailConfigured),
+          resendConfigured: Boolean(data?.resendConfigured),
+          gmailConfigured: Boolean(data?.gmailConfigured),
+          whatsappConfigured: Boolean(data?.whatsappConfigured),
+        });
+      } catch {
+        setMsgStatus(null);
+      }
+    };
+    loadMsg();
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -116,15 +166,73 @@ const Clients = () => {
       }
       setIsModalOpen(false);
       fetchClients();
-    } catch (error) {
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      const message = error?.response?.data?.message || 'Erreur lors de l\'enregistrement.';
+      alert(detail ? `${message}\n\n${detail}` : message);
       console.error('Erreur:', error);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Supprimer ce client ?')) {
+  const toggleClientCompleted = async (client: Client, completed: boolean) => {
+    const ok = window.confirm(
+      completed
+        ? 'Marquer ce client comme terminé ? Vous pourrez ensuite le supprimer (admin).'
+        : 'Retirer le marquage « terminé » ?'
+    );
+    if (!ok) return;
+    try {
+      await api.patch(`/clients/${client.id}/complete`, { completed });
+      fetchClients();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur.');
+    }
+  };
+
+  const openReminder = (client: Client) => {
+    if (!client.email?.trim() && !client.phone?.trim()) {
+      alert('Ajoutez au moins un e-mail ou un téléphone pour ce client.');
+      return;
+    }
+    setReminderClient(client);
+    if (client.email?.trim()) setReminderChannel('email');
+    else setReminderChannel('whatsapp');
+    setReminderKind('facture');
+    setReminderCustom('');
+  };
+
+  const handleSendReminder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reminderClient) return;
+    if (reminderChannel === 'email' && !msgStatus?.emailConfigured) {
+      alert('Aucun envoi e-mail configuré (Resend ou Gmail dans backend/.env — voir Paramètres).');
+      return;
+    }
+    if (reminderChannel === 'whatsapp' && !msgStatus?.whatsappConfigured) {
+      alert('WhatsApp n’est pas configuré (voir Paramètres → .env).');
+      return;
+    }
+    try {
+      setSendingReminder(true);
+      await api.post(`/clients/${reminderClient.id}/send-reminder`, {
+        channel: reminderChannel,
+        kind: reminderKind,
+        customMessage: reminderCustom.trim() || undefined,
+      });
+      alert('Message envoyé.');
+      setReminderClient(null);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Envoi impossible.');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  const handleDelete = async (client: Client) => {
+    if (!isAdmin || !Number(client.completed || 0)) return;
+    if (window.confirm('Supprimer définitivement ce client ?')) {
       try {
-        await api.delete(`/clients/${id}`);
+        await api.delete(`/clients/${client.id}`);
         fetchClients();
       } catch (error: any) {
         const message =
@@ -210,7 +318,14 @@ const Clients = () => {
                           {client.name.substring(0, 2).toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-bold text-slate-900">{client.name}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-slate-900">{client.name}</span>
+                            {Number(client.completed || 0) ? (
+                              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-700">
+                                Terminé
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="text-xs text-slate-400 font-medium truncate max-w-[200px]">{client.address || 'Pas d\'adresse'}</div>
                         </div>
                       </div>
@@ -226,15 +341,37 @@ const Clients = () => {
                     </td>
                     <td className="px-4 py-5 text-right sm:px-6 lg:px-8">
                       <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openReminder(client)}
+                          className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-sky-50 hover:text-sky-600"
+                          title="Envoyer un rappel (e-mail / WhatsApp)"
+                        >
+                          <Send className="w-5 h-5" />
+                        </button>
                         <button type="button" onClick={() => handleOpenHistory(client)} className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600" title="Historique">
                           <History className="w-5 h-5" />
                         </button>
                         <button type="button" onClick={() => handleOpenModal(client)} className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-emerald-50 hover:text-emerald-600">
                           <Edit2 className="w-5 h-5" />
                         </button>
-                        <button type="button" onClick={() => handleDelete(client.id)} className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-600">
-                          <Trash2 className="w-5 h-5" />
+                        <button
+                          type="button"
+                          onClick={() => toggleClientCompleted(client, !Number(client.completed || 0))}
+                          className={`rounded-xl p-2.5 transition-all ${
+                            Number(client.completed || 0)
+                              ? 'text-violet-600 bg-violet-50 hover:bg-violet-100'
+                              : 'text-slate-400 hover:bg-violet-50 hover:text-violet-600'
+                          }`}
+                          title={Number(client.completed || 0) ? 'Retirer le marquage terminé' : 'Marquer comme terminé'}
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
                         </button>
+                        {isAdmin && Number(client.completed || 0) ? (
+                          <button type="button" onClick={() => handleDelete(client)} className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-600" title="Supprimer définitivement">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -244,6 +381,90 @@ const Clients = () => {
           </table>
         </div>
       </div>
+
+      {reminderClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-[2rem] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 p-6">
+              <div>
+                <h2 className="text-xl font-black text-slate-800">Rappel client</h2>
+                <p className="text-sm font-medium text-slate-500">{reminderClient.name}</p>
+              </div>
+              <button type="button" onClick={() => setReminderClient(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <form onSubmit={handleSendReminder} className="space-y-4 p-6">
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Sujet</label>
+                <select
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                  value={reminderKind}
+                  onChange={(e) => setReminderKind(e.target.value as typeof reminderKind)}
+                >
+                  <option value="paiement">Paiement</option>
+                  <option value="livraison">Livraison</option>
+                  <option value="facture">Facture</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Canal</label>
+                <select
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                  value={reminderChannel}
+                  onChange={(e) => setReminderChannel(e.target.value as 'email' | 'whatsapp')}
+                >
+                  <option value="email" disabled={!reminderClient.email}>
+                    E-mail {reminderClient.email ? `(${reminderClient.email})` : '(non renseigné)'}
+                  </option>
+                  <option value="whatsapp" disabled={!reminderClient.phone}>
+                    WhatsApp {reminderClient.phone ? `(${reminderClient.phone})` : '(non renseigné)'}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Message personnalisé (optionnel — sinon texte par défaut)
+                </label>
+                <textarea
+                  rows={4}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-sky-500"
+                  value={reminderCustom}
+                  onChange={(e) => setReminderCustom(e.target.value)}
+                  placeholder="Laissez vide pour un message automatique signé avec le nom de votre société (profil utilisateur)."
+                />
+              </div>
+              {msgStatus &&
+              ((reminderChannel === 'email' && !msgStatus.emailConfigured) ||
+                (reminderChannel === 'whatsapp' && !msgStatus.whatsappConfigured)) ? (
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                  {reminderChannel === 'email'
+                    ? 'E-mail non configuré (Resend ou Gmail dans backend/.env). '
+                    : 'WhatsApp non configuré — voir backend/.env.example (Meta ou Twilio). '}
+                  <span className="font-bold">Paramètres</span> affiche le statut.
+                </p>
+              ) : null}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReminderClient(null)}
+                  className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingReminder}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-sky-600 py-3 text-sm font-black text-white shadow-lg shadow-sky-100 transition hover:bg-sky-700 disabled:opacity-60"
+                >
+                  <Send className="h-4 w-4" />
+                  {sendingReminder ? 'Envoi…' : 'Envoyer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* History Modal */}
       {isHistoryOpen && selectedClient && (

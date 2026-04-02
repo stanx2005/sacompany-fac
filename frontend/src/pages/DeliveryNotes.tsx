@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, Search, FileText, Calendar, User, Download, CheckCircle, X, Truck, RefreshCw, Save } from 'lucide-react';
-import { generatePDF } from '../utils/pdfGenerator';
+import {
+  Plus,
+  Search,
+  FileText,
+  Download,
+  CheckCircle,
+  CheckCircle2,
+  X,
+  Truck,
+  Save,
+  Archive,
+  Trash2,
+} from 'lucide-react';
+import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
+import { SendDocumentActions } from '../components/SendDocumentActions';
+import { useAuthStore } from '../store/authStore';
 
 interface DeliveryNote {
   id: number;
@@ -14,9 +28,12 @@ interface DeliveryNote {
   taxNumber: string;
   address: string;
   phone: string;
+  archived?: number;
+  completed?: number;
 }
 
 const DeliveryNotes = () => {
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
   const CREATE_CLIENT_OPTION = '__create_client__';
   const [notes, setNotes] = useState<DeliveryNote[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -24,6 +41,7 @@ const DeliveryNotes = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -44,10 +62,11 @@ const DeliveryNotes = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      const notesUrl = includeArchived ? '/delivery-notes?includeArchived=true' : '/delivery-notes';
       const [notesRes, clientsRes, productsRes] = await Promise.all([
-        api.get('/delivery-notes'),
+        api.get(notesUrl),
         api.get('/clients'),
-        api.get('/products')
+        api.get('/products'),
       ]);
       setNotes(notesRes.data);
       setClients(clientsRes.data);
@@ -61,12 +80,15 @@ const DeliveryNotes = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [includeArchived]);
 
   const handleDownloadPDF = async (note: DeliveryNote) => {
     try {
-      const response = await api.get(`/delivery-notes/${note.id}/items`);
-      const items = response.data;
+      const [itemsRes, settingsRes] = await Promise.all([
+        api.get(`/delivery-notes/${note.id}/items`),
+        api.get('/settings').catch(() => ({ data: {} })),
+      ]);
+      const items = itemsRes.data;
       const entity = {
         name: note.clientName,
         taxNumber: note.taxNumber,
@@ -74,10 +96,28 @@ const DeliveryNotes = () => {
         phone: note.phone
       };
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      generatePDF("BON DE LIVRAISON", note, items, entity, user);
+      const pb = settingsRes.data?.pdfBranding || {};
+      generatePDF("BON DE LIVRAISON", note, items, entity, { ...user, ...pb });
     } catch (error) {
       console.error('Erreur PDF:', error);
     }
+  };
+
+  const prepareDeliveryNotePdf = async (note: DeliveryNote) => {
+    const [itemsRes, settingsRes] = await Promise.all([
+      api.get(`/delivery-notes/${note.id}/items`),
+      api.get('/settings').catch(() => ({ data: {} })),
+    ]);
+    const items = itemsRes.data;
+    const entity = {
+      name: note.clientName,
+      taxNumber: note.taxNumber,
+      address: note.address,
+      phone: note.phone,
+    };
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    const pb = settingsRes.data?.pdfBranding || {};
+    return generatePDFAsBase64('BON DE LIVRAISON', note, items, entity, { ...u, ...pb });
   };
 
   const handleMarkAsDelivered = async (id: number) => {
@@ -101,6 +141,44 @@ const DeliveryNotes = () => {
       } catch (error) {
         console.error('Erreur conversion:', error);
       }
+    }
+  };
+
+  const toggleArchive = async (note: DeliveryNote, archived: boolean) => {
+    if (!isAdmin) return;
+    if (!window.confirm(archived ? 'Archiver ce bon de livraison ?' : 'Restaurer ce bon ?')) return;
+    try {
+      await api.patch(`/delivery-notes/${note.id}/archive`, { archived });
+      fetchData();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Erreur.');
+    }
+  };
+
+  const toggleBlCompleted = async (note: DeliveryNote, completed: boolean) => {
+    const ok = window.confirm(
+      completed
+        ? 'Marquer ce bon comme terminé ? Vous pourrez ensuite le supprimer (admin).'
+        : 'Retirer le marquage « terminé » ?'
+    );
+    if (!ok) return;
+    try {
+      await api.patch(`/delivery-notes/${note.id}/complete`, { completed });
+      fetchData();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Erreur.');
+    }
+  };
+
+  const handleDeleteBl = async (note: DeliveryNote) => {
+    if (!isAdmin) return;
+    if (!Number(note.completed || 0)) return;
+    if (!window.confirm(`Supprimer définitivement le bon ${note.noteNumber} ?`)) return;
+    try {
+      await api.delete(`/delivery-notes/${note.id}`);
+      fetchData();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Erreur.');
     }
   };
 
@@ -216,7 +294,18 @@ const DeliveryNotes = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-3">
+            {isAdmin && (
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={includeArchived}
+                  onChange={(e) => setIncludeArchived(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                Afficher archivés
+              </label>
+            )}
             <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Trier:</span>
             <select 
               className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -247,40 +336,121 @@ const DeliveryNotes = () => {
                 <tr><td colSpan={5} className="px-8 py-20 text-center text-slate-400 font-medium">Aucun bon de livraison trouvé.</td></tr>
               ) : (
                 filteredNotes.map((note) => (
-                  <tr key={note.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <tr
+                    key={note.id}
+                    className={`hover:bg-slate-50/50 transition-colors group ${Number(note.archived) ? 'opacity-75' : ''}`}
+                  >
                     <td className="px-8 py-6">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                          <Truck className="w-4 h-4" />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                            <Truck className="w-4 h-4" />
+                          </div>
+                          <span className="font-black text-slate-900 tracking-tight">{note.noteNumber}</span>
                         </div>
-                        <span className="font-black text-slate-900 tracking-tight">{note.noteNumber}</span>
+                        {Number(note.completed) ? (
+                          <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-700">
+                            Terminé
+                          </span>
+                        ) : null}
+                        {Number(note.archived) ? (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-600">
+                            Archivé
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-8 py-6 font-bold text-slate-700">{note.clientName}</td>
                     <td className="px-8 py-6 text-sm font-medium text-slate-500">{note.date}</td>
                     <td className="px-8 py-6">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        note.status === 'invoiced' ? 'bg-purple-50 text-purple-600' :
-                        note.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
-                      }`}>
-                        {note.status === 'invoiced' ? 'Facturé' : note.status === 'delivered' ? 'Livré' : 'En attente'}
-                      </span>
+                      {Number(note.completed) ? (
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-700">
+                          Terminée
+                        </span>
+                      ) : (
+                        <span
+                          className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            note.status === 'invoiced'
+                              ? 'bg-purple-50 text-purple-600'
+                              : note.status === 'delivered'
+                                ? 'bg-emerald-50 text-emerald-600'
+                                : 'bg-blue-50 text-blue-600'
+                          }`}
+                        >
+                          {note.status === 'invoiced'
+                            ? 'Facturé'
+                            : note.status === 'delivered'
+                              ? 'Livré'
+                              : 'En attente'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-8 py-6 text-right">
-                      <div className="flex items-center justify-end space-x-1">
-                        {note.status === 'pending' && (
-                          <button onClick={() => handleMarkAsDelivered(note.id)} className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Marquer comme Livré">
+                      <div className="flex items-center justify-end flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleBlCompleted(note, !Number(note.completed || 0))}
+                          className={`p-2.5 rounded-xl transition-all ${
+                            Number(note.completed || 0)
+                              ? 'text-violet-600 bg-violet-50 hover:bg-violet-100'
+                              : 'text-slate-400 hover:text-violet-600 hover:bg-violet-50'
+                          }`}
+                          title={Number(note.completed || 0) ? 'Retirer le marquage terminé' : 'Marquer comme terminé'}
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
+                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => toggleArchive(note, !Number(note.archived))}
+                            className="p-2.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all"
+                            title={Number(note.archived) ? 'Restaurer' : 'Archiver'}
+                          >
+                            <Archive className="w-5 h-5" />
+                          </button>
+                        )}
+                        {isAdmin && Number(note.completed || 0) ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBl(note)}
+                            className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                            title="Supprimer définitivement"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        ) : null}
+                        {!Number(note.archived) && note.status === 'pending' && (
+                          <button
+                            onClick={() => handleMarkAsDelivered(note.id)}
+                            className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                            title="Marquer comme livré"
+                          >
                             <CheckCircle className="w-5 h-5" />
                           </button>
                         )}
-                        {note.status !== 'invoiced' && (
-                          <button onClick={() => handleConvertToInvoice(note.id)} className="p-2.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all" title="Convertir en Facture">
+                        {!Number(note.archived) && note.status !== 'invoiced' && (
+                          <button
+                            onClick={() => handleConvertToInvoice(note.id)}
+                            className="p-2.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all"
+                            title="Convertir en facture"
+                          >
                             <FileText className="w-5 h-5" />
                           </button>
                         )}
-                        <button onClick={() => handleDownloadPDF(note)} className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
+                        <button
+                          onClick={() => handleDownloadPDF(note)}
+                          className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                          title="Télécharger PDF"
+                        >
                           <Download className="w-5 h-5" />
                         </button>
+                        <SendDocumentActions
+                          preparePdf={() => prepareDeliveryNotePdf(note)}
+                          recipientType="client"
+                          recipientId={note.clientId}
+                          subject={`Bon de livraison ${note.noteNumber}`}
+                          caption={`Bonjour, veuillez trouver ci-joint le bon de livraison ${note.noteNumber}.`}
+                        />
                       </div>
                     </td>
                   </tr>

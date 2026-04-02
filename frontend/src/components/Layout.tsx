@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Menu } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Menu, Bell } from 'lucide-react';
 import Sidebar from './Sidebar';
+import api from '../services/api';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -24,6 +27,24 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
       document.body.style.overflow = '';
     };
   }, [mobileNavOpen]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data } = await api.get('/notifications');
+        const n =
+          (data.upcomingCheques?.length || 0) +
+          (data.overdueInvoices?.length || 0) +
+          (data.userRemindersDue?.length || 0);
+        setNotifCount(n);
+      } catch {
+        setNotifCount(0);
+      }
+    };
+    load();
+    const t = window.setInterval(load, 120000);
+    return () => window.clearInterval(t);
+  }, []);
 
   return (
     <div className="flex min-h-screen min-h-[100dvh] bg-[#f8fafc]">
@@ -62,6 +83,18 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
             </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-4">
+            <Link
+              to="/reminders"
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50"
+              title="Rappels: chèques, factures en retard, rappels personnels"
+            >
+              <Bell className="h-5 w-5" strokeWidth={2.25} />
+              {notifCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-black text-white">
+                  {notifCount > 99 ? '99+' : notifCount}
+                </span>
+              )}
+            </Link>
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 sm:h-9 sm:w-9">
               AD
             </div>

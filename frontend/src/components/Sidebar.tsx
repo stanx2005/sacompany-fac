@@ -14,7 +14,10 @@ import {
   ClipboardList,
   UserCircle,
   ChevronRight,
-  X
+  X,
+  Settings,
+  ScrollText,
+  Bell,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
@@ -25,10 +28,12 @@ type SidebarProps = {
 
 const Sidebar = ({ mobileOpen = false, onClose }: SidebarProps) => {
   const logout = useAuthStore((state) => state.logout);
+  const role = useAuthStore((state) => state.user?.role);
 
   const menuItems = [
     { group: 'Général', items: [
       { icon: LayoutDashboard, label: 'Tableau de bord', path: '/' },
+      { icon: Bell, label: 'Rappels', path: '/reminders' },
     ]},
     { group: 'Ventes', items: [
       { icon: Users, label: 'Clients', path: '/clients' },
@@ -48,6 +53,8 @@ const Sidebar = ({ mobileOpen = false, onClose }: SidebarProps) => {
     ]},
     { group: 'Compte', items: [
       { icon: UserCircle, label: 'Mon Profil', path: '/profile' },
+      { icon: Settings, label: 'Paramètres', path: '/settings' },
+      ...(role === 'admin' ? [{ icon: ScrollText, label: "Journal d'activité", path: '/activity' }] : []),
     ]}
   ];
 
