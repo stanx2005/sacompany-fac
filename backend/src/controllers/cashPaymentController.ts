@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { cashPayments, chequeRegistry, clients, salesInvoices } from '../db/schema.js';
+import { docNumber, getMainConfig } from '../services/appConfig.js';
 
 export const getCashPayments = async (req: Request, res: Response) => {
   try {
@@ -68,7 +69,8 @@ export const createCashPayment = async (req: Request, res: Response) => {
       .where(
         and(
           eq(chequeRegistry.invoiceId, normalizedInvoiceId),
-          eq(chequeRegistry.type, 'incoming')
+          eq(chequeRegistry.type, 'incoming'),
+          sql`COALESCE(${chequeRegistry.archived}, 0) = 0`
         )
       );
 
@@ -97,7 +99,8 @@ export const createCashPayment = async (req: Request, res: Response) => {
       throw new Error('Creation du paiement espece echouee.');
     }
 
-    const paymentNumber = `CASH-${Number(inserted.id) + 99}`;
+    const cfg = await getMainConfig();
+    const paymentNumber = docNumber(cfg.numbering.cash, Number(inserted.id));
     await db
       .update(cashPayments)
       .set({ paymentNumber })

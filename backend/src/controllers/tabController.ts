@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { openTabs, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
+import { docNumber, getMainConfig } from '../services/appConfig.js';
 
 export const getOpenTabs = async (req: Request, res: Response) => {
   try {
@@ -41,6 +42,49 @@ export const addToTab = async (req: Request, res: Response) => {
     res.status(201).json({ message: 'Ajouté au carnet avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de l\'ajout au carnet.', error });
+  }
+};
+
+export const updateTabItem = async (req: Request, res: Response) => {
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  if (!id) return res.status(400).json({ message: 'ID manquant.' });
+
+  const { productId, quantity, date } = req.body as {
+    productId?: unknown;
+    quantity?: unknown;
+    date?: unknown;
+  };
+
+  try {
+    const tabId = parseInt(id, 10);
+    if (Number.isNaN(tabId)) return res.status(400).json({ message: 'ID invalide.' });
+
+    const existing = await db
+      .select({ id: openTabs.id })
+      .from(openTabs)
+      .where(and(eq(openTabs.id, tabId), eq(openTabs.isClosed, 0)))
+      .limit(1);
+    if (!existing[0]) {
+      return res.status(404).json({ message: 'Ligne introuvable ou déjà clôturée.' });
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (productId !== undefined) updates.productId = Number(productId);
+    if (quantity !== undefined) updates.quantity = Number(quantity);
+    if (date !== undefined) updates.date = String(date);
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: 'Aucun champ à mettre à jour.' });
+    }
+    if (updates.quantity !== undefined && (Number(updates.quantity) < 1 || Number.isNaN(Number(updates.quantity)))) {
+      return res.status(400).json({ message: 'Quantité invalide.' });
+    }
+
+    await db.update(openTabs).set(updates as any).where(eq(openTabs.id, tabId));
+    res.json({ message: 'Ligne du carnet mise à jour.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur lors de la mise à jour.', error });
   }
 };
 
@@ -106,12 +150,14 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
       totalExclTax: Number(totalExclTax),
       totalTax: Number(totalTax),
       totalInclTax: Number(totalInclTax),
-      status: 'pending'
+      status: 'pending',
+      completed: 0,
     } as any).returning({ id: salesInvoices.id });
 
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
-    const invoiceNumber = `FACT-TAB-${invoiceResult.id + 99}`;
+    const cfg = await getMainConfig();
+    const invoiceNumber = docNumber(cfg.numbering.invoiceTab, invoiceResult.id);
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
 
     for (const item of processedItems) {

@@ -23,6 +23,9 @@ export const clients = sqliteTable('clients', {
   phone: text('phone'),
   address: text('address'),
   taxNumber: text('tax_number'), // Matricule Fiscale
+  archived: integer('archived').default(0),
+  /** Marqué « terminé » — requis avant suppression (sécurité). */
+  completed: integer('completed').default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
 
@@ -53,6 +56,9 @@ export const deliveryNotes = sqliteTable('delivery_notes', {
   date: text('date').notNull(),
   totalInclTax: real('total_incl_tax').notNull(),
   status: text('status', { enum: ['pending', 'delivered', 'invoiced', 'cancelled'] }).default('pending'),
+  archived: integer('archived').default(0),
+  /** Marqué « terminé » — requis avant suppression (admin). */
+  completed: integer('completed').default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
 
@@ -75,6 +81,9 @@ export const salesInvoices = sqliteTable('sales_invoices', {
   totalTax: real('total_tax').notNull(),
   totalInclTax: real('total_incl_tax').notNull(),
   status: text('status', { enum: ['pending', 'paid', 'cancelled'] }).default('pending'),
+  archived: integer('archived').default(0),
+  /** Marqué « terminé » — requis avant suppression. */
+  completed: integer('completed').default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
 
@@ -123,6 +132,7 @@ export const chequeRegistry = sqliteTable('cheque_registry', {
   supplierId: integer('supplier_id').references(() => suppliers.id),
   invoiceId: integer('invoice_id').references(() => salesInvoices.id),
   invoiceNumber: text('invoice_number'),
+  archived: integer('archived').default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
 
@@ -167,4 +177,38 @@ export const quoteItems = sqliteTable('quote_items', {
   unitPrice: real('unit_price').notNull(),
   taxRate: real('tax_rate').notNull(),
   totalLine: real('total_line').notNull(),
+});
+
+export const activityLogs = sqliteTable('activity_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').references(() => users.id),
+  action: text('action').notNull(),
+  entityType: text('entity_type').notNull(),
+  entityId: integer('entity_id'),
+  details: text('details'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+});
+
+export const appSettings = sqliteTable('app_settings', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** Avoid SQL column name `key` (reserved / driver quirks with libsql). */
+  settingKey: text('setting_key').notNull().unique(),
+  value: text('value').notNull(),
+});
+
+/** Rappels personnels (par utilisateur). */
+export const reminders = sqliteTable('reminders', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  /** Client lié (optionnel) — pour envoyer un rappel par e-mail / WhatsApp. */
+  clientId: integer('client_id').references(() => clients.id),
+  /** Chèque lié (optionnel) — suivi du numéro, montant, échéance, etc. */
+  chequeId: integer('cheque_id').references(() => chequeRegistry.id),
+  title: text('title').notNull(),
+  note: text('note'),
+  dueDate: text('due_date').notNull(),
+  completed: integer('completed').default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });

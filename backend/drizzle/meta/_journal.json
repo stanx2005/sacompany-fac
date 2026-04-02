@@ -29,6 +29,13 @@
       "when": 1775000000000,
       "tag": "0003_cash_payments_and_invoice_links",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1775100000000,
+      "tag": "0004_enhancements_bundle",
+      "breakpoints": true
     }
   ]
 }

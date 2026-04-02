@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { quotes, quoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { docNumber, getMainConfig } from '../services/appConfig.js';
 
 const safeId = (id: string | string[] | undefined): string => {
   if (Array.isArray(id)) return id[0] || '0';
@@ -87,7 +88,8 @@ export const createQuote = async (req: Request, res: Response) => {
 
     if (!result) throw new Error('Erreur lors de la création du devis.');
 
-    const quoteNumber = `DEV-${result.id + 99}`;
+    const cfg = await getMainConfig();
+    const quoteNumber = docNumber(cfg.numbering.quote, result.id);
     await db.update(quotes).set({ quoteNumber }).where(eq(quotes.id, result.id));
 
     for (const item of processedItems) {
@@ -175,12 +177,14 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
       totalExclTax: Number(quote.totalExclTax || 0),
       totalTax: Number(quote.totalTax || 0),
       totalInclTax: Number(quote.totalInclTax || 0),
-      status: 'pending'
+      status: 'pending',
+      completed: 0,
     } as any).returning({ id: salesInvoices.id });
 
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
-    const invoiceNumber = `FACT-DEV-${invoiceResult.id + 99}`;
+    const cfg = await getMainConfig();
+    const invoiceNumber = docNumber(cfg.numbering.invoiceDevis, invoiceResult.id);
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
 
     for (const item of items) {

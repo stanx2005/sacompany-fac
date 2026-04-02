@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { purchaseOrders, purchaseOrderItems, suppliers, products, deliveryNotes, deliveryNoteItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { docNumber, getMainConfig } from '../services/appConfig.js';
 
 const safeId = (id: string | string[] | undefined): string => {
   if (Array.isArray(id)) return id[0] || '0';
@@ -123,7 +124,8 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
 
     if (!result) throw new Error('Erreur lors de la création du bon de commande.');
 
-    const orderNumber = `BC-${result.id + 99}`;
+    const cfg = await getMainConfig();
+    const orderNumber = docNumber(cfg.numbering.bc, result.id);
     await db.update(purchaseOrders).set({ orderNumber }).where(eq(purchaseOrders.id, result.id));
 
     for (const item of processedItems) {

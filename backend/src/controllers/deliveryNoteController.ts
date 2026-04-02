@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { deliveryNotes, deliveryNoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
+import { logActivity } from '../services/auditLog.js';
+import { docNumber, getMainConfig } from '../services/appConfig.js';
 
 const safeId = (id: string | string[] | undefined): string => {
   if (Array.isArray(id)) return id[0] || '0';
@@ -10,20 +12,29 @@ const safeId = (id: string | string[] | undefined): string => {
 
 export const getDeliveryNotes = async (req: Request, res: Response) => {
   try {
-    const notes = await db.select({
-      id: deliveryNotes.id,
-      noteNumber: deliveryNotes.noteNumber,
-      date: deliveryNotes.date,
-      totalInclTax: deliveryNotes.totalInclTax,
-      status: deliveryNotes.status,
-      clientId: deliveryNotes.clientId,
-      clientName: clients.name,
-      taxNumber: clients.taxNumber,
-      address: clients.address,
-      phone: clients.phone,
-    })
-    .from(deliveryNotes)
-    .leftJoin(clients, eq(deliveryNotes.clientId, clients.id));
+    const includeArchived = req.query.includeArchived === 'true';
+    const base = db
+      .select({
+        id: deliveryNotes.id,
+        noteNumber: deliveryNotes.noteNumber,
+        date: deliveryNotes.date,
+        totalInclTax: deliveryNotes.totalInclTax,
+        status: deliveryNotes.status,
+        archived: deliveryNotes.archived,
+        completed: deliveryNotes.completed,
+        clientId: deliveryNotes.clientId,
+        clientName: clients.name,
+        taxNumber: clients.taxNumber,
+        address: clients.address,
+        phone: clients.phone,
+      })
+      .from(deliveryNotes)
+      .leftJoin(clients, eq(deliveryNotes.clientId, clients.id));
+
+    const notes = includeArchived
+      ? await base
+      : await base.where(sql`COALESCE(${deliveryNotes.archived}, 0) = 0`);
+
     res.json(notes);
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la récupération des bons de livraison.', error });
@@ -97,12 +108,14 @@ export const convertBLToInvoice = async (req: Request, res: Response) => {
       totalExclTax: Number(totalExclTax),
       totalTax: Number(totalTax),
       totalInclTax: Number(bl.totalInclTax || 0),
-      status: 'pending'
+      status: 'pending',
+      completed: 0,
     } as any).returning({ id: salesInvoices.id });
 
     if (!invoiceResult) throw new Error('Erreur facture.');
 
-    const invoiceNumber = `FACT-CONV-${invoiceResult.id + 99}`;
+    const cfg = await getMainConfig();
+    const invoiceNumber = docNumber(cfg.numbering.invoiceConv, invoiceResult.id);
     await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
 
     for (const item of items) {
@@ -140,12 +153,15 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
       clientId: Number(clientId || 0),
       date: String(date || ''),
       totalInclTax: Number(totalInclTax),
-      status: 'pending'
+      status: 'pending',
+      archived: 0,
+      completed: 0,
     } as any).returning({ id: deliveryNotes.id });
 
     if (!result) throw new Error('Erreur BL.');
 
-    const noteNumber = `BL-${result.id + 99}`;
+    const cfg = await getMainConfig();
+    const noteNumber = docNumber(cfg.numbering.bl, result.id);
     await db.update(deliveryNotes).set({ noteNumber }).where(eq(deliveryNotes.id, result.id));
 
     for (const item of processedItems) {
@@ -161,5 +177,62 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
     res.status(201).json({ message: 'Bon de livraison créé.', id: result.id });
   } catch (error) {
     res.status(500).json({ message: 'Erreur BL.', error });
+  }
+};
+
+export const setDeliveryNoteArchived = async (req: Request, res: Response) => {
+  const id = safeId(req.params.id);
+  const noteId = parseInt(id || '0', 10);
+  const archived = Boolean(req.body?.archived);
+  const uid = (req as { user?: { id: number } }).user?.id;
+  try {
+    await db
+      .update(deliveryNotes)
+      .set({ archived: archived ? 1 : 0 })
+      .where(eq(deliveryNotes.id, noteId));
+    await logActivity(uid, archived ? 'archive' : 'unarchive', 'delivery_note', noteId, {});
+    res.json({ message: archived ? 'Bon de livraison archivé.' : 'Bon de livraison restauré.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur.', error });
+  }
+};
+
+export const setDeliveryNoteCompleted = async (req: Request, res: Response) => {
+  const id = safeId(req.params.id);
+  const noteId = parseInt(id || '0', 10);
+  const completed = Boolean(req.body?.completed);
+  const uid = (req as { user?: { id: number } }).user?.id;
+  try {
+    await db
+      .update(deliveryNotes)
+      .set({ completed: completed ? 1 : 0 })
+      .where(eq(deliveryNotes.id, noteId));
+    await logActivity(uid, completed ? 'mark_complete' : 'unmark_complete', 'delivery_note', noteId, {});
+    res.json({ message: completed ? 'Bon marqué comme terminé.' : 'Marquage retiré.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur.', error });
+  }
+};
+
+export const deleteDeliveryNote = async (req: Request, res: Response) => {
+  const id = safeId(req.params.id);
+  const noteId = parseInt(id || '0', 10);
+  const uid = (req as { user?: { id: number } }).user?.id;
+  try {
+    const [bl] = await db.select().from(deliveryNotes).where(eq(deliveryNotes.id, noteId));
+    if (!bl) {
+      return res.status(404).json({ message: 'Bon de livraison non trouvé.' });
+    }
+    if (!Number(bl.completed || 0)) {
+      return res.status(400).json({
+        message: 'Marquez le bon comme « terminé » avant de le supprimer.',
+      });
+    }
+    await db.delete(deliveryNoteItems).where(eq(deliveryNoteItems.deliveryNoteId, noteId));
+    await db.delete(deliveryNotes).where(eq(deliveryNotes.id, noteId));
+    await logActivity(uid, 'delete', 'delivery_note', noteId, {});
+    res.json({ message: 'Bon de livraison supprimé.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur suppression.', error });
   }
 };

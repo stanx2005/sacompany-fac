@@ -1,24 +1,68 @@
 import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { cashPayments, chequeRegistry, clients, deliveryNotes, openTabs, quotes, salesInvoices, suppliers } from '../db/schema.js';
+import { cashPayments, chequeRegistry, clients, deliveryNotes, openTabs, quotes, salesInvoices } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
+import { logActivity } from '../services/auditLog.js';
 
 export const getClients = async (req: Request, res: Response) => {
   try {
-    const allClients = await db.select().from(clients);
-    res.json(allClients);
+    const includeArchived = req.query.includeArchived === 'true';
+    const rows = includeArchived
+      ? await db.select().from(clients)
+      : await db.select().from(clients).where(sql`COALESCE(${clients.archived}, 0) = 0`);
+    res.json(rows);
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la récupération des clients.', error });
+  }
+};
+
+export const setClientCompleted = async (req: Request, res: Response) => {
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  const clientId = parseInt(id || '0', 10);
+  const completed = Boolean(req.body?.completed);
+  const uid = (req as { user?: { id: number } }).user?.id;
+  try {
+    await db.update(clients).set({ completed: completed ? 1 : 0 }).where(eq(clients.id, clientId));
+    await logActivity(uid, completed ? 'mark_complete' : 'unmark_complete', 'client', clientId, {});
+    res.json({ message: completed ? 'Client marqué comme terminé.' : 'Marquage retiré.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur.', error });
+  }
+};
+
+export const setClientArchived = async (req: Request, res: Response) => {
+  const { id: rawId } = req.params;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  const clientId = parseInt(id || '0', 10);
+  const archived = Boolean(req.body?.archived);
+  const uid = (req as { user?: { id: number } }).user?.id;
+  try {
+    await db.update(clients).set({ archived: archived ? 1 : 0 }).where(eq(clients.id, clientId));
+    await logActivity(uid, archived ? 'archive' : 'unarchive', 'client', clientId, {});
+    res.json({ message: archived ? 'Client archivé.' : 'Client restauré.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur.', error });
   }
 };
 
 export const createClient = async (req: Request, res: Response) => {
   const { name, email, phone, address, taxNumber } = req.body;
   try {
-    await db.insert(clients).values({ name, email, phone, address, taxNumber });
+    await db.insert(clients).values({
+      name: String(name || ''),
+      email: email ? String(email) : null,
+      phone: phone ? String(phone) : null,
+      address: address ? String(address) : null,
+      taxNumber: taxNumber ? String(taxNumber) : null,
+      archived: 0,
+      completed: 0,
+    });
     res.status(201).json({ message: 'Client créé avec succès.' });
   } catch (error) {
-    res.status(500).json({ message: 'Erreur lors de la création du client.', error });
+    console.error('createClient:', error);
+    const detail = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ message: 'Erreur lors de la création du client.', detail });
   }
 };
 
@@ -31,7 +75,9 @@ export const bulkCreateClients = async (req: Request, res: Response) => {
         email: String(c.Email || ''),
         phone: String(c.Telephone || ''),
         address: String(c.Adresse || ''),
-        taxNumber: String(c.MatriculeFiscale || '')
+        taxNumber: String(c.MatriculeFiscale || ''),
+        archived: 0,
+        completed: 0,
       });
     }
     res.status(201).json({ message: `${clientsList.length} clients importés avec succès.` });
@@ -61,6 +107,16 @@ export const deleteClient = async (req: Request, res: Response) => {
     const clientId = parseInt(id || '0');
     if (!clientId) {
       return res.status(400).json({ message: 'ID client invalide.' });
+    }
+
+    const [clientRow] = await db.select({ completed: clients.completed }).from(clients).where(eq(clients.id, clientId));
+    if (!clientRow) {
+      return res.status(404).json({ message: 'Client introuvable.' });
+    }
+    if (!Number(clientRow.completed || 0)) {
+      return res.status(400).json({
+        message: 'Marquez le client comme « terminé » avant de le supprimer.',
+      });
     }
 
     const invoices = await db
@@ -174,6 +230,8 @@ export const deleteClient = async (req: Request, res: Response) => {
     }
 
     await db.delete(clients).where(eq(clients.id, clientId));
+    const uid = (req as { user?: { id: number } }).user?.id;
+    await logActivity(uid, 'delete', 'client', clientId, {});
     res.json({ message: 'Client supprimé avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la suppression du client.', error });
