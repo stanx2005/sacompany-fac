@@ -7,6 +7,7 @@ import Suppliers from './pages/Suppliers';
 import Products from './pages/Products';
 import Tabs from './pages/Tabs';
 import Cheques from './pages/Cheques';
+import CashPayments from './pages/CashPayments';
 import Invoices from './pages/Invoices';
 import Dashboard from './pages/Dashboard';
 import DeliveryNotes from './pages/DeliveryNotes';
@@ -34,6 +35,7 @@ function App() {
         <Route path="/delivery-notes" element={<DeliveryNotes />} />
         <Route path="/tabs" element={<Tabs />} />
         <Route path="/cheques" element={<Cheques />} />
+        <Route path="/cash-payments" element={<CashPayments />} />
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="*" element={

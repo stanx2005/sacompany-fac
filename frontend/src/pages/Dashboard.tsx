@@ -92,17 +92,18 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Tableau de Bord</h1>
-          <p className="text-slate-500 font-medium mt-1">Gérez votre activité commerciale en temps réel.</p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Tableau de Bord</h1>
+          <p className="mt-1 font-medium text-slate-500">Gérez votre activité commerciale en temps réel.</p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-2xl w-fit border border-slate-200/60">
+        <div className="-mx-1 flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-slate-200/60 bg-slate-100 p-1 sm:mx-0 sm:w-fit sm:flex-wrap sm:overflow-visible">
           {(['day', 'week', 'month', 'year'] as const).map((t) => (
             <button
               key={t}
+              type="button"
               onClick={() => setTimeframe(t)}
-              className={`px-5 py-2 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${
+              className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all sm:px-5 sm:text-xs ${
                 timeframe === t 
                   ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50' 
                   : 'text-slate-400 hover:text-slate-600'
@@ -114,7 +115,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-5">
         {cards.map((card, index) => (
           <div key={index} className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
             <div className={`absolute top-0 right-0 w-24 h-24 ${card.bg} opacity-20 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110 duration-500`}></div>
@@ -140,13 +141,13 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-10 relative z-10">
-            <div>
-              <h3 className="text-xl font-black text-slate-900 tracking-tight">Analyse des Flux</h3>
+        <div className="relative overflow-hidden rounded-[2rem] border border-slate-200/60 bg-white p-4 shadow-sm sm:rounded-[2.5rem] sm:p-8 lg:col-span-2">
+          <div className="relative z-10 mb-6 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-lg font-black tracking-tight text-slate-900 sm:text-xl">Analyse des Flux</h3>
               <p className="text-sm font-medium text-slate-400">Comparaison Ventes vs Achats</p>
             </div>
-            <div className="flex items-center space-x-6">
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
               <div className="flex items-center space-x-2">
                 <div className="w-3 h-3 bg-emerald-500 rounded-full shadow-sm shadow-emerald-200"></div>
                 <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Ventes</span>
@@ -158,7 +159,7 @@ const Dashboard = () => {
             </div>
           </div>
           
-          <div className="h-[350px] w-full relative z-10">
+          <div className="relative z-10 h-[240px] w-full min-w-0 sm:h-[300px] lg:h-[350px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>

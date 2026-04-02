@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, CheckCircle, Search, Calendar, User, Package, X, Edit2, Trash2, Calculator, ArrowRight, BookOpen } from 'lucide-react';
+import { Plus, CheckCircle, Search, Calendar, User, Package, X, Edit2, Trash2, Calculator, ArrowRight, BookOpen, FileDown } from 'lucide-react';
+import { generatePDF } from '../utils/pdfGenerator';
 
 interface TabItem {
   id: number;
@@ -15,6 +16,7 @@ interface TabItem {
 }
 
 const Tabs = () => {
+  const CREATE_CLIENT_OPTION = '__create_client__';
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -26,6 +28,15 @@ const Tabs = () => {
     productId: '',
     quantity: '1',
     date: new Date().toISOString().split('T')[0]
+  });
+  const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientData, setNewClientData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    taxNumber: '',
   });
 
   const fetchData = async () => {
@@ -85,6 +96,59 @@ const Tabs = () => {
       } catch (error) {
         console.error('Erreur:', error);
       }
+    }
+  };
+
+  const handleGenerateBon = (clientId: number, data: any) => {
+    try {
+      const client = clients.find((c) => c.id === clientId);
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const pdfData = {
+        date: new Date().toISOString().split('T')[0],
+        noteNumber: `BON-TAB-${clientId}-${Date.now().toString().slice(-4)}`,
+      };
+      const pdfItems = (data.items || []).map((item: TabItem) => ({
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.productPrice,
+        taxRate: item.productTaxRate || 20,
+        date: item.date,
+      }));
+      const entity = {
+        name: client?.name || data.name || 'Client',
+        taxNumber: client?.taxNumber || '',
+        address: client?.address || '',
+        phone: client?.phone || '',
+      };
+      generatePDF('BON', pdfData, pdfItems, entity, user);
+    } catch (error) {
+      console.error('Erreur generation BON:', error);
+      alert('Erreur lors de la generation du BON.');
+    }
+  };
+
+  const openCreateClientModal = () => {
+    setNewClientData({ name: '', email: '', phone: '', address: '', taxNumber: '' });
+    setIsCreateClientOpen(true);
+  };
+
+  const handleCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setCreatingClient(true);
+      await api.post('/clients', newClientData);
+      const clientsRes = await api.get('/clients');
+      const allClients = clientsRes.data || [];
+      setClients(allClients);
+      const createdClient = allClients[allClients.length - 1];
+      if (createdClient?.id) {
+        setFormData((prev) => ({ ...prev, clientId: String(createdClient.id) }));
+      }
+      setIsCreateClientOpen(false);
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur lors de la creation du client.');
+    } finally {
+      setCreatingClient(false);
     }
   };
 
@@ -163,6 +227,13 @@ const Tabs = () => {
                   >
                     <CheckCircle className="w-5 h-5" />
                   </button>
+                  <button
+                    onClick={() => handleGenerateBon(parseInt(clientId), data)}
+                    className="p-2 text-blue-600 hover:bg-white hover:shadow-sm rounded-xl transition-all"
+                    title="Générer BON PDF"
+                  >
+                    <FileDown className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
               
@@ -226,9 +297,17 @@ const Tabs = () => {
                   disabled={!!formData.clientId && formData.clientId !== ''}
                   className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all font-bold text-slate-700 disabled:opacity-60"
                   value={formData.clientId}
-                  onChange={(e) => setFormData({...formData, clientId: e.target.value})}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === CREATE_CLIENT_OPTION) {
+                      openCreateClientModal();
+                      return;
+                    }
+                    setFormData({...formData, clientId: value});
+                  }}
                 >
                   <option value="">Sélectionner un client</option>
+                  <option value={CREATE_CLIENT_OPTION}>+ Creer un client</option>
                   {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
@@ -277,6 +356,48 @@ const Tabs = () => {
                   className="flex-1 px-4 py-3 bg-orange-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-orange-700 shadow-lg shadow-orange-100 transition-all"
                 >
                   Ajouter
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {isCreateClientOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-xl font-black text-slate-800">Nouveau Client</h2>
+              <button type="button" onClick={() => setIsCreateClientOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateClient} className="p-8 space-y-5">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Nom Complet</label>
+                <input type="text" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.name} onChange={(e) => setNewClientData({ ...newClientData, name: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Telephone</label>
+                  <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.phone} onChange={(e) => setNewClientData({ ...newClientData, phone: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Matricule Fiscale</label>
+                  <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.taxNumber} onChange={(e) => setNewClientData({ ...newClientData, taxNumber: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Email</label>
+                <input type="email" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.email} onChange={(e) => setNewClientData({ ...newClientData, email: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Adresse</label>
+                <textarea rows={3} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={newClientData.address} onChange={(e) => setNewClientData({ ...newClientData, address: e.target.value })} />
+              </div>
+              <div className="pt-4 flex space-x-3">
+                <button type="button" onClick={() => setIsCreateClientOpen(false)} className="flex-1 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Annuler</button>
+                <button type="submit" disabled={creatingClient} className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all disabled:opacity-60">
+                  {creatingClient ? 'Creation...' : 'Creer'}
                 </button>
               </div>
             </form>

@@ -16,6 +16,12 @@
   body {
     @apply bg-[#f8fafc] text-[#1e293b] antialiased;
   }
+  button,
+  [type="button"],
+  [type="submit"],
+  [role="button"] {
+    touch-action: manipulation;
+  }
 }
 
 @layer components {

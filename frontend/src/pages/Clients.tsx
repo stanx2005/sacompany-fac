@@ -126,8 +126,12 @@ const Clients = () => {
       try {
         await api.delete(`/clients/${id}`);
         fetchClients();
-      } catch (error) {
-        console.error('Erreur:', error);
+      } catch (error: any) {
+        const message =
+          error?.response?.data?.message ||
+          'Suppression impossible pour ce client.';
+        alert(message);
+        console.error('Erreur suppression client:', error);
       }
     }
   };
@@ -144,26 +148,26 @@ const Clients = () => {
     });
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Gestion des Clients</h1>
-          <p className="text-slate-500 font-medium mt-1">Consultez et gérez votre base de données clients.</p>
+    <div className="space-y-6 sm:space-y-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Gestion des Clients</h1>
+          <p className="mt-1 font-medium text-slate-500">Consultez et gérez votre base de données clients.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center space-x-2 bg-white border border-slate-200 text-slate-600 px-5 py-2.5 rounded-2xl hover:bg-slate-50 transition-all cursor-pointer text-sm font-bold shadow-sm">
-            <Upload className="w-4 h-4" />
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <label className="flex min-h-[44px] cursor-pointer items-center space-x-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 shadow-sm transition-all hover:bg-slate-50 sm:px-5">
+            <Upload className="h-4 w-4 shrink-0" />
             <span>Importer</span>
             <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
           </label>
-          <button onClick={() => handleOpenModal()} className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold">
-            <Plus className="w-5 h-5" />
-            <span>Nouveau Client</span>
+          <button type="button" onClick={() => handleOpenModal()} className="flex min-h-[44px] items-center space-x-2 rounded-2xl bg-emerald-600 px-4 py-2.5 font-bold text-white shadow-lg shadow-emerald-100 transition-all hover:bg-emerald-700 sm:px-6">
+            <Plus className="h-5 w-5 shrink-0" />
+            <span className="whitespace-nowrap">Nouveau Client</span>
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-[1.75rem] border border-slate-200/60 bg-white shadow-sm sm:rounded-[2.5rem]">
         <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/30">
           <div className="relative flex-1 max-w-md w-full">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
@@ -182,25 +186,25 @@ const Clients = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="-mx-px overflow-x-auto overscroll-x-contain">
+          <table className="w-full min-w-[640px] border-collapse text-left">
             <thead>
               <tr className="bg-slate-50/50">
-                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Client</th>
-                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Contact</th>
-                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Identifiant</th>
-                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-6 sm:py-5 sm:text-[11px] sm:tracking-[0.2em] lg:px-8">Client</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-6 sm:py-5 sm:text-[11px] sm:tracking-[0.2em] lg:px-8">Contact</th>
+                <th className="px-4 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-6 sm:py-5 sm:text-[11px] sm:tracking-[0.2em] lg:px-8">Identifiant</th>
+                <th className="px-4 py-4 text-right text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 sm:px-6 sm:py-5 sm:text-[11px] sm:tracking-[0.2em] lg:px-8">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-slate-400 font-medium">Chargement des données...</td></tr>
+                <tr><td colSpan={4} className="px-4 py-16 text-center font-medium text-slate-400 sm:px-8 sm:py-20">Chargement des données...</td></tr>
               ) : filteredClients.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-slate-400 font-medium">Aucun client trouvé.</td></tr>
+                <tr><td colSpan={4} className="px-4 py-16 text-center font-medium text-slate-400 sm:px-8 sm:py-20">Aucun client trouvé.</td></tr>
               ) : (
                 filteredClients.map((client) => (
-                  <tr key={client.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-8 py-6">
+                  <tr key={client.id} className="group transition-colors hover:bg-slate-50/50">
+                    <td className="px-4 py-5 sm:px-6 lg:px-8">
                       <div className="flex items-center space-x-4">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-black text-xs group-hover:bg-emerald-100 group-hover:text-emerald-600 transition-colors">
                           {client.name.substring(0, 2).toUpperCase()}
@@ -211,24 +215,24 @@ const Clients = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-4 py-5 sm:px-6 lg:px-8">
                       <div className="text-sm font-bold text-slate-700">{client.phone || '-'}</div>
-                      <div className="text-xs text-slate-400 font-medium">{client.email || '-'}</div>
+                      <div className="text-xs font-medium text-slate-400">{client.email || '-'}</div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-4 py-5 sm:px-6 lg:px-8">
                       <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider">
                         ICE: {client.taxNumber || 'N/A'}
                       </span>
                     </td>
-                    <td className="px-8 py-6 text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button onClick={() => handleOpenHistory(client)} className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Historique">
+                    <td className="px-4 py-5 text-right sm:px-6 lg:px-8">
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        <button type="button" onClick={() => handleOpenHistory(client)} className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-blue-50 hover:text-blue-600" title="Historique">
                           <History className="w-5 h-5" />
                         </button>
-                        <button onClick={() => handleOpenModal(client)} className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all">
+                        <button type="button" onClick={() => handleOpenModal(client)} className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-emerald-50 hover:text-emerald-600">
                           <Edit2 className="w-5 h-5" />
                         </button>
-                        <button onClick={() => handleDelete(client.id)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                        <button type="button" onClick={() => handleDelete(client.id)} className="rounded-xl p-2.5 text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-600">
                           <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
@@ -278,12 +282,12 @@ const Clients = () => {
                 ))
               )}
             </div>
-            <div className="p-6 border-t border-slate-100 bg-slate-50/30 flex space-x-3">
-              <button className="flex-1 flex items-center justify-center space-x-2 py-3 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 transition-all shadow-lg shadow-blue-100">
-                <MessageSquare className="w-4 h-4" />
+            <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/30 p-4 sm:flex-row sm:space-x-3 sm:p-6">
+              <button type="button" className="flex min-h-[44px] flex-1 items-center justify-center space-x-2 rounded-2xl bg-blue-600 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-blue-100 transition-all hover:bg-blue-700">
+                <MessageSquare className="h-4 w-4" />
                 <span>Nouvelle Interaction</span>
               </button>
-              <button onClick={() => setIsHistoryOpen(false)} className="px-8 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Fermer</button>
+              <button type="button" onClick={() => setIsHistoryOpen(false)} className="min-h-[44px] rounded-2xl border border-slate-200 bg-white px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-600 transition-all hover:bg-slate-50 sm:px-8">Fermer</button>
             </div>
           </div>
         </div>
@@ -302,7 +306,7 @@ const Clients = () => {
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Nom Complet</label>
                 <input type="text" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Téléphone</label>
                   <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
