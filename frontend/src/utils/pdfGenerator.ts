@@ -180,6 +180,7 @@ export const generatePDF = (title: string, data: any, items: any[], entity: any,
       if (title === "FACTURE") phrasePrefix = "Arrêté la présente facture à la somme de :";
       else if (title === "BON DE COMMANDE") phrasePrefix = "Arrêté le présent bon de commande à la somme de :";
       else if (title === "DEVIS") phrasePrefix = "Arrêté le présent devis à la somme de :";
+      else if (title === "BON") phrasePrefix = "Arrêté le présent bon à la somme de :";
 
       const amountText = `${amountInLetters.toUpperCase()} DIRHAMS${centsInLetters.toUpperCase()}.`;
       doc.setFontSize(9);
@@ -192,13 +193,11 @@ export const generatePDF = (title: string, data: any, items: any[], entity: any,
       doc.setTextColor(40);
       doc.setFont("helvetica", "bold");
       const signatureY = finalY + 10;
-      doc.text(`Fait à ......................., le ${data.date}`, 195, signatureY, { align: 'right' });
-      doc.text("Cachet et Signature du Client:", 195, signatureY + 7, { align: 'right' });
-      doc.rect(135, signatureY + 12, 60, 30);
-      doc.setFontSize(9);
-      doc.setTextColor(100);
-      doc.setFont("helvetica", "italic");
-      doc.text("(Document de transport - Sans prix)", margin, signatureY + 45);
+      doc.text(`Fait à ......................., le ${data.date}`, margin, signatureY);
+      doc.text("Cachet et Signature du Client:", margin, signatureY + 7);
+      doc.rect(margin, signatureY + 12, 70, 30);
+      doc.text("Cachet et Signature:", 195, signatureY + 7, { align: 'right' });
+      doc.rect(125, signatureY + 12, 70, 30);
     }
 
     // Footer with Dynamic Company Details

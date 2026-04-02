@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, CheckCircle, Search, Calendar, User, Package, X, Edit2, Trash2, Calculator, ArrowRight, BookOpen } from 'lucide-react';
+import { Plus, CheckCircle, Search, Calendar, User, Package, X, Edit2, Trash2, Calculator, ArrowRight, BookOpen, FileDown } from 'lucide-react';
+import { generatePDF } from '../utils/pdfGenerator';
 
 interface TabItem {
   id: number;
@@ -95,6 +96,34 @@ const Tabs = () => {
       } catch (error) {
         console.error('Erreur:', error);
       }
+    }
+  };
+
+  const handleGenerateBon = (clientId: number, data: any) => {
+    try {
+      const client = clients.find((c) => c.id === clientId);
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const pdfData = {
+        date: new Date().toISOString().split('T')[0],
+        noteNumber: `BON-TAB-${clientId}-${Date.now().toString().slice(-4)}`,
+      };
+      const pdfItems = (data.items || []).map((item: TabItem) => ({
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.productPrice,
+        taxRate: item.productTaxRate || 20,
+        date: item.date,
+      }));
+      const entity = {
+        name: client?.name || data.name || 'Client',
+        taxNumber: client?.taxNumber || '',
+        address: client?.address || '',
+        phone: client?.phone || '',
+      };
+      generatePDF('BON', pdfData, pdfItems, entity, user);
+    } catch (error) {
+      console.error('Erreur generation BON:', error);
+      alert('Erreur lors de la generation du BON.');
     }
   };
 
@@ -197,6 +226,13 @@ const Tabs = () => {
                     title="Clôturer et facturer"
                   >
                     <CheckCircle className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => handleGenerateBon(parseInt(clientId), data)}
+                    className="p-2 text-blue-600 hover:bg-white hover:shadow-sm rounded-xl transition-all"
+                    title="Générer BON PDF"
+                  >
+                    <FileDown className="w-5 h-5" />
                   </button>
                 </div>
               </div>
