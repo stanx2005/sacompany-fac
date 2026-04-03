@@ -327,6 +327,11 @@ const SettingsPage = () => {
           <Settings2 className="h-6 w-6 text-emerald-600" />
           <h2 className="text-lg font-black">Numérotation</h2>
         </div>
+        <p className="mb-4 text-sm text-slate-500">
+          Pour les factures : indiquez seulement le préfixe (ex. <code className="rounded bg-slate-100 px-1">FACT-</code>), pas un
+          numéro ni une date — la suite (<code className="rounded bg-slate-100 px-1">001</code>,{' '}
+          <code className="rounded bg-slate-100 px-1">002</code>…) est ajoutée automatiquement.
+        </p>
         <div className="grid gap-4 sm:grid-cols-2">
           {defaultKeys.map(([key, label]) => (
             <div key={key}>

@@ -51,10 +51,32 @@ const DEFAULT_CONFIG: MainAppConfig = {
 
 let cache: MainAppConfig | null = null;
 
+const SEQUENTIAL_INVOICE_PREFIX_KEYS: (keyof NumberingConfig)[] = [
+  'invoice',
+  'invoiceTab',
+  'invoiceDevis',
+  'invoiceConv',
+];
+
+/**
+ * Préfixe seul (ex. FACT-), sans numéro ni date. Si Paramètres contient par erreur
+ * « FACT-001-2026 », on ramène à « FACT- » sinon le prochain numéro devient FACT-001-2026001.
+ */
+export function normalizeSequentialNumberingPrefix(prefix: string): string {
+  const p = String(prefix || '').trim();
+  const m = p.match(/^([A-Za-z]+-)(\d)/);
+  if (m?.[1]) return m[1];
+  return p;
+}
+
 function mergeWithDefaults(raw: Partial<MainAppConfig> | null): MainAppConfig {
   if (!raw) return structuredClone(DEFAULT_CONFIG);
+  const numbering = { ...DEFAULT_CONFIG.numbering, ...raw.numbering };
+  for (const k of SEQUENTIAL_INVOICE_PREFIX_KEYS) {
+    numbering[k] = normalizeSequentialNumberingPrefix(String(numbering[k] ?? ''));
+  }
   return {
-    numbering: { ...DEFAULT_CONFIG.numbering, ...raw.numbering },
+    numbering,
     pdfBranding: { ...DEFAULT_CONFIG.pdfBranding, ...raw.pdfBranding },
   };
 }
@@ -107,6 +129,7 @@ const DEFAULT_INVOICE_SEQ_MIN_DIGITS = 3;
 
 /** Plus grand suffixe numérique déjà utilisé pour ce préfixe (ex. FACT-014 → 14, FACT-01 → 1). Ignore les brouillons TEMP-*. */
 export function maxInvoiceSuffixForPrefix(prefix: string, invoiceNumbers: string[]): number {
+  prefix = normalizeSequentialNumberingPrefix(prefix);
   if (!prefix) return 0;
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`^${escaped}(\\d+)$`);
@@ -134,10 +157,11 @@ export async function allocateNextSequentialInvoiceNumber(
   prefix: string,
   minDigits: number = DEFAULT_INVOICE_SEQ_MIN_DIGITS
 ): Promise<string> {
+  const base = normalizeSequentialNumberingPrefix(prefix);
   const rows = await db.select({ invoiceNumber: salesInvoices.invoiceNumber }).from(salesInvoices);
   const nums = rows.map((r) => r.invoiceNumber ?? '');
-  const next = maxInvoiceSuffixForPrefix(prefix, nums) + 1;
-  return `${prefix}${formatInvoiceSequentialPart(next, minDigits)}`;
+  const next = maxInvoiceSuffixForPrefix(base, nums) + 1;
+  return `${base}${formatInvoiceSequentialPart(next, minDigits)}`;
 }
 
 function isUniqueConstraintError(e: unknown): boolean {
