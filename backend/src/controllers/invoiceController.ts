@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { salesInvoices, invoiceItems, clients, products, deliveryNotes, deliveryNoteItems, purchaseOrders, purchaseOrderItems, chequeRegistry, cashPayments } from '../db/schema.js';
 import { and, eq, sql } from 'drizzle-orm';
-import { docNumber, getMainConfig } from '../services/appConfig.js';
+import { assignSequentialInvoiceNumberToRow, docNumber, getMainConfig } from '../services/appConfig.js';
 import { logActivity } from '../services/auditLog.js';
 
 const safeId = (id: string | string[] | undefined): string => {
@@ -345,8 +345,7 @@ export const createInvoice = async (req: Request, res: Response) => {
     if (!result) throw new Error('Erreur facture.');
 
     const cfg = await getMainConfig();
-    const invoiceNumber = docNumber(cfg.numbering.invoice, result.id);
-    await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, result.id));
+    const invoiceNumber = await assignSequentialInvoiceNumberToRow(result.id, cfg.numbering.invoice);
 
     const uid = (req as { user?: { id: number } }).user?.id;
     await logActivity(uid, 'create', 'invoice', result.id, { invoiceNumber });

@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { openTabs, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
-import { docNumber, getMainConfig } from '../services/appConfig.js';
+import { assignSequentialInvoiceNumberToRow, getMainConfig } from '../services/appConfig.js';
 
 export const getOpenTabs = async (req: Request, res: Response) => {
   try {
@@ -157,8 +157,7 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
     const cfg = await getMainConfig();
-    const invoiceNumber = docNumber(cfg.numbering.invoiceTab, invoiceResult.id);
-    await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
+    await assignSequentialInvoiceNumberToRow(invoiceResult.id, cfg.numbering.invoiceTab);
 
     for (const item of processedItems) {
       await db.insert(invoiceItems).values({

@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { deliveryNotes, deliveryNoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
 import { logActivity } from '../services/auditLog.js';
-import { docNumber, getMainConfig } from '../services/appConfig.js';
+import { assignSequentialInvoiceNumberToRow, docNumber, getMainConfig } from '../services/appConfig.js';
 
 const safeId = (id: string | string[] | undefined): string => {
   if (Array.isArray(id)) return id[0] || '0';
@@ -115,8 +115,7 @@ export const convertBLToInvoice = async (req: Request, res: Response) => {
     if (!invoiceResult) throw new Error('Erreur facture.');
 
     const cfg = await getMainConfig();
-    const invoiceNumber = docNumber(cfg.numbering.invoiceConv, invoiceResult.id);
-    await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
+    await assignSequentialInvoiceNumberToRow(invoiceResult.id, cfg.numbering.invoiceConv);
 
     for (const item of items) {
       await db.insert(invoiceItems).values({

@@ -1,5 +1,5 @@
 import { db } from '../db/index.js';
-import { appSettings } from '../db/schema.js';
+import { appSettings, salesInvoices } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const CONFIG_KEY = 'main_config';
@@ -100,4 +100,68 @@ export async function saveMainConfig(config: MainAppConfig): Promise<void> {
 export function docNumber(prefix: string, recordId: number): string {
   const n = Math.max(0, Math.floor(Number(recordId)) - 1);
   return `${prefix}${n}`;
+}
+
+const DEFAULT_INVOICE_SEQ_MIN_DIGITS = 2;
+
+/** Plus grand suffixe numérique déjà utilisé pour ce préfixe (ex. FACT-14 → 14). Ignore les brouillons TEMP-*. */
+export function maxInvoiceSuffixForPrefix(prefix: string, invoiceNumbers: string[]): number {
+  if (!prefix) return 0;
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${escaped}(\\d+)$`);
+  let max = 0;
+  for (const raw of invoiceNumbers) {
+    const m = raw?.match(re);
+    if (m?.[1]) {
+      const n = parseInt(m[1], 10);
+      if (!Number.isNaN(n)) max = Math.max(max, n);
+    }
+  }
+  return max;
+}
+
+function formatInvoiceSequentialPart(n: number, minDigits: number): string {
+  const s = String(n);
+  return s.length < minDigits ? s.padStart(minDigits, '0') : s;
+}
+
+/**
+ * Prochain numéro de facture pour ce préfixe : FACT-01, FACT-02… indépendamment de l'id SQLite.
+ * Chaque préfixe (FACT-, FACT-TAB-, etc.) a sa propre suite.
+ */
+export async function allocateNextSequentialInvoiceNumber(
+  prefix: string,
+  minDigits: number = DEFAULT_INVOICE_SEQ_MIN_DIGITS
+): Promise<string> {
+  const rows = await db.select({ invoiceNumber: salesInvoices.invoiceNumber }).from(salesInvoices);
+  const nums = rows.map((r) => r.invoiceNumber ?? '');
+  const next = maxInvoiceSuffixForPrefix(prefix, nums) + 1;
+  return `${prefix}${formatInvoiceSequentialPart(next, minDigits)}`;
+}
+
+function isUniqueConstraintError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /UNIQUE|unique constraint|SQLITE_CONSTRAINT_UNIQUE/i.test(msg);
+}
+
+/**
+ * Assigne un numéro séquentiel à une ligne facture déjà créée (TEMP-…), avec retry si collision rare.
+ */
+export async function assignSequentialInvoiceNumberToRow(
+  invoiceId: number,
+  prefix: string,
+  minDigits: number = DEFAULT_INVOICE_SEQ_MIN_DIGITS
+): Promise<string> {
+  const maxAttempts = 10;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const invoiceNumber = await allocateNextSequentialInvoiceNumber(prefix, minDigits);
+    try {
+      await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceId));
+      return invoiceNumber;
+    } catch (e) {
+      if (isUniqueConstraintError(e) && attempt < maxAttempts - 1) continue;
+      throw e;
+    }
+  }
+  throw new Error('Impossible d\'attribuer un numéro de facture unique.');
 }

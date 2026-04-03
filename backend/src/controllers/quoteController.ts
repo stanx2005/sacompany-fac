@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { quotes, quoteItems, clients, products, salesInvoices, invoiceItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { docNumber, getMainConfig } from '../services/appConfig.js';
+import { assignSequentialInvoiceNumberToRow, docNumber, getMainConfig } from '../services/appConfig.js';
 
 const safeId = (id: string | string[] | undefined): string => {
   if (Array.isArray(id)) return id[0] || '0';
@@ -184,8 +184,7 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
     const cfg = await getMainConfig();
-    const invoiceNumber = docNumber(cfg.numbering.invoiceDevis, invoiceResult.id);
-    await db.update(salesInvoices).set({ invoiceNumber }).where(eq(salesInvoices.id, invoiceResult.id));
+    await assignSequentialInvoiceNumberToRow(invoiceResult.id, cfg.numbering.invoiceDevis);
 
     for (const item of items) {
       await db.insert(invoiceItems).values({
