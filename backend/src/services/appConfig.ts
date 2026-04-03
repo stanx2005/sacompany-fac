@@ -102,9 +102,10 @@ export function docNumber(prefix: string, recordId: number): string {
   return `${prefix}${n}`;
 }
 
-const DEFAULT_INVOICE_SEQ_MIN_DIGITS = 2;
+/** Suffixe toujours sur 3 chiffres : FACT-001, FACT-002, FACT-003 … */
+const DEFAULT_INVOICE_SEQ_MIN_DIGITS = 3;
 
-/** Plus grand suffixe numérique déjà utilisé pour ce préfixe (ex. FACT-14 → 14). Ignore les brouillons TEMP-*. */
+/** Plus grand suffixe numérique déjà utilisé pour ce préfixe (ex. FACT-014 → 14, FACT-01 → 1). Ignore les brouillons TEMP-*. */
 export function maxInvoiceSuffixForPrefix(prefix: string, invoiceNumbers: string[]): number {
   if (!prefix) return 0;
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -126,7 +127,7 @@ function formatInvoiceSequentialPart(n: number, minDigits: number): string {
 }
 
 /**
- * Prochain numéro de facture pour ce préfixe : FACT-01, FACT-02… indépendamment de l'id SQLite.
+ * Prochain numéro de facture pour ce préfixe : FACT-001, FACT-002… indépendamment de l'id SQLite.
  * Chaque préfixe (FACT-, FACT-TAB-, etc.) a sa propre suite.
  */
 export async function allocateNextSequentialInvoiceNumber(
