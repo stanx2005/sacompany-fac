@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import Clients from './pages/Clients';
 import Suppliers from './pages/Suppliers';
 import Products from './pages/Products';
+import PurchaseProducts from './pages/PurchaseProducts';
 import Tabs from './pages/Tabs';
 import Cheques from './pages/Cheques';
 import CashPayments from './pages/CashPayments';
@@ -12,6 +13,7 @@ import Invoices from './pages/Invoices';
 import Dashboard from './pages/Dashboard';
 import DeliveryNotes from './pages/DeliveryNotes';
 import PurchaseOrders from './pages/PurchaseOrders';
+import PurchaseInvoices from './pages/PurchaseInvoices';
 
 import Quotes from './pages/Quotes';
 import Profile from './pages/Profile';
@@ -33,8 +35,10 @@ function App() {
         <Route path="/clients" element={<Clients />} />
         <Route path="/suppliers" element={<Suppliers />} />
         <Route path="/products" element={<Products />} />
+        <Route path="/purchase-products" element={<PurchaseProducts />} />
         <Route path="/quotes" element={<Quotes />} />
         <Route path="/purchase-orders" element={<PurchaseOrders />} />
+        <Route path="/purchase-invoices" element={<PurchaseInvoices />} />
         <Route path="/delivery-notes" element={<DeliveryNotes />} />
         <Route path="/tabs" element={<Tabs />} />
         <Route path="/cheques" element={<Cheques />} />

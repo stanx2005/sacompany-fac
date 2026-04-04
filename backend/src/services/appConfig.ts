@@ -22,6 +22,9 @@ export type NumberingConfig = {
 export type PdfBrandingConfig = {
   footerLegal: string;
   logoDataUrl: string;
+  /** En-tête PDF : image uploadée ou texte (comme avant l’ajout du logo fichier). */
+  logoMode?: 'image' | 'text';
+  logoText?: string;
 };
 
 export type MainAppConfig = {
@@ -46,6 +49,8 @@ const DEFAULT_CONFIG: MainAppConfig = {
   pdfBranding: {
     footerLegal: '',
     logoDataUrl: '',
+    logoMode: 'image',
+    logoText: '',
   },
 };
 

@@ -11,6 +11,7 @@ import {
   Wallet,
   LogOut,
   ShoppingCart,
+  ShoppingBag,
   ClipboardList,
   UserCircle,
   ChevronRight,
@@ -18,6 +19,7 @@ import {
   Settings,
   ScrollText,
   Bell,
+  Receipt,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
@@ -41,11 +43,13 @@ const Sidebar = ({ mobileOpen = false, onClose }: SidebarProps) => {
       { icon: ClipboardList, label: 'Bon de Livraison', path: '/delivery-notes' },
       { icon: FileText, label: 'Factures', path: '/invoices' },
       { icon: BookOpen, label: 'Carnet (Tabs)', path: '/tabs' },
+      { icon: Package, label: 'Produits', path: '/products' },
     ]},
     { group: 'Achats', items: [
       { icon: Truck, label: 'Fournisseurs', path: '/suppliers' },
       { icon: ShoppingCart, label: 'Bon de Commande', path: '/purchase-orders' },
-      { icon: Package, label: 'Produits', path: '/products' },
+      { icon: Receipt, label: 'Facture', path: '/purchase-invoices' },
+      { icon: ShoppingBag, label: 'Produit Achat', path: '/purchase-products' },
     ]},
     { group: 'Finance', items: [
       { icon: CreditCard, label: 'Chèques', path: '/cheques' },

@@ -105,12 +105,43 @@ export const purchaseOrders = sqliteTable('purchase_orders', {
   date: text('date').notNull(),
   totalInclTax: real('total_incl_tax').notNull(),
   status: text('status', { enum: ['pending', 'received', 'cancelled'] }).default('pending'),
+  archived: integer('archived').default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
 });
 
 export const purchaseOrderItems = sqliteTable('purchase_order_items', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   purchaseOrderId: integer('purchase_order_id').references(() => purchaseOrders.id),
+  productId: integer('product_id').references(() => products.id),
+  quantity: integer('quantity').notNull(),
+  unitPrice: real('unit_price').notNull(),
+  taxRate: real('tax_rate').notNull(),
+  totalLine: real('total_line').notNull(),
+});
+
+/** Factures fournisseur (achat) — saisie manuelle ou pièce jointe PDF / image. */
+export const purchaseInvoices = sqliteTable('purchase_invoices', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  supplierId: integer('supplier_id').references(() => suppliers.id),
+  purchaseOrderId: integer('purchase_order_id').references(() => purchaseOrders.id),
+  invoiceNumber: text('invoice_number').notNull(),
+  date: text('date').notNull(),
+  totalExclTax: real('total_excl_tax').notNull().default(0),
+  totalTax: real('total_tax').notNull().default(0),
+  totalInclTax: real('total_incl_tax').notNull().default(0),
+  sourceType: text('source_type').notNull(),
+  filePath: text('file_path'),
+  fileMime: text('file_mime'),
+  originalFilename: text('original_filename'),
+  notes: text('notes'),
+  status: text('status').default('pending'),
+  archived: integer('archived').default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),
+});
+
+export const purchaseInvoiceItems = sqliteTable('purchase_invoice_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  purchaseInvoiceId: integer('purchase_invoice_id').references(() => purchaseInvoices.id),
   productId: integer('product_id').references(() => products.id),
   quantity: integer('quantity').notNull(),
   unitPrice: real('unit_price').notNull(),

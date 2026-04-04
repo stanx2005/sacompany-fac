@@ -78,6 +78,28 @@ function isPlaceholderRib(raw: string | undefined | null): boolean {
   return !d || /^0+$/.test(d);
 }
 
+function inferPdfLogoMode(companyInfo: {
+  logoMode?: string;
+  logoDataUrl?: string;
+}): 'image' | 'text' {
+  const m = companyInfo.logoMode;
+  if (m === 'text') return 'text';
+  if (m === 'image') return 'image';
+  const url = String(companyInfo.logoDataUrl ?? '');
+  return url.startsWith('data:image') ? 'image' : 'text';
+}
+
+/** En-tête gauche : texte (plusieurs lignes possibles). */
+function addLogoTextBlock(doc: jsPDF, text: string, margin: number): void {
+  const t = text.trim();
+  if (!t) return;
+  doc.setFontSize(24);
+  doc.setTextColor(30, 58, 138);
+  doc.setFont('helvetica', 'bold');
+  const lines = doc.splitTextToSize(t, 110);
+  doc.text(lines, margin, 20);
+}
+
 function addLogoImage(doc: jsPDF, logoDataUrl: string, margin: number): boolean {
   if (!logoDataUrl || !logoDataUrl.startsWith('data:image')) return false;
   const lower = logoDataUrl.toLowerCase();
@@ -127,16 +149,23 @@ function buildPdfDocument(
 
     const footerLegalExtra = (companyInfo as { footerLegal?: string }).footerLegal || "";
     const logoDataUrl = (companyInfo as { logoDataUrl?: string }).logoDataUrl || "";
+    const logoTextSetting = String((companyInfo as { logoText?: string }).logoText ?? '').trim();
     const cName = isPlaceholderCompanyName(companyInfo.companyName)
       ? ''
       : String(companyInfo.companyName ?? '').trim();
 
-    const logoOk = addLogoImage(doc, logoDataUrl, margin);
-    if (!logoOk && cName) {
-      doc.setFontSize(24);
-      doc.setTextColor(30, 58, 138);
-      doc.setFont("helvetica", "bold");
-      doc.text(cName, margin, 20);
+    const logoMode = inferPdfLogoMode(companyInfo as { logoMode?: string; logoDataUrl?: string });
+    if (logoMode === 'text') {
+      const headerText = logoTextSetting || cName;
+      addLogoTextBlock(doc, headerText, margin);
+    } else {
+      const logoOk = addLogoImage(doc, logoDataUrl, margin);
+      if (!logoOk && cName) {
+        doc.setFontSize(24);
+        doc.setTextColor(30, 58, 138);
+        doc.setFont("helvetica", "bold");
+        doc.text(cName, margin, 20);
+      }
     }
 
     // Document Title
@@ -159,7 +188,11 @@ function buildPdfDocument(
     doc.setFontSize(11);
     doc.setTextColor(40);
     doc.setFont("helvetica", "bold");
-    doc.text(title === "BON DE COMMANDE" ? "FOURNISSEUR:" : "CLIENT:", margin, 50);
+    doc.text(
+      title === "BON DE COMMANDE" || title === "FACTURE ACHAT" ? "FOURNISSEUR:" : "CLIENT:",
+      margin,
+      50
+    );
     
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
@@ -238,7 +271,7 @@ function buildPdfDocument(
       doc.text(`Total HT:`, 135, finalY + 2);
       doc.text(`${totalExclTax.toFixed(2)} MAD`, 190, finalY + 2, { align: 'right' });
 
-      doc.text(`TVA (20%):`, 135, finalY + 9);
+      doc.text(`TVA:`, 135, finalY + 9);
       doc.text(`${totalTax.toFixed(2)} MAD`, 190, finalY + 9, { align: 'right' });
 
       doc.setFontSize(11);
@@ -257,13 +290,14 @@ function buildPdfDocument(
       else if (title === "BON DE COMMANDE") phrasePrefix = "Arrêté le présent bon de commande à la somme de :";
       else if (title === "DEVIS") phrasePrefix = "Arrêté le présent devis à la somme de :";
       else if (title === "BON") phrasePrefix = "Arrêté le présent bon à la somme de :";
+      else if (title === "FACTURE ACHAT") phrasePrefix = "Arrêté la présente facture d'achat à la somme de :";
 
       const amountText = `${amountInLetters.toUpperCase()} DIRHAMS${centsInLetters.toUpperCase()}.`;
       doc.setFontSize(9);
       doc.setTextColor(40);
       doc.setFont("helvetica", "bold");
       doc.text(phrasePrefix, margin, finalY + 35);
-      doc.text(amountText, margin, finalY + 42); // Line break added here
+      doc.text(amountText, margin, finalY + 42);
     } else {
       doc.setFontSize(10);
       doc.setTextColor(40);
@@ -313,6 +347,54 @@ export const generatePDF = (title: string, data: any, items: any[], entity: any,
     alert("Erreur lors de la génération du PDF. Veuillez vérifier la console.");
   }
 };
+
+/** Télécharge le PDF et retourne une copie base64 (une seule construction du document). */
+export function generatePDFSaveAndBase64(
+  title: string,
+  data: any,
+  items: any[],
+  entity: any,
+  companyInfo: any = {}
+): { filename: string; base64: string } {
+  const { doc, filename } = buildPdfDocument(title, data, items, entity, companyInfo);
+  doc.save(filename);
+  const buf = doc.output('arraybuffer') as ArrayBuffer;
+  return { filename, base64: arrayBufferToBase64(buf) };
+}
+
+function base64ToPdfBlob(base64: string): Blob {
+  const binary = atob(base64);
+  const n = binary.length;
+  const bytes = new Uint8Array(n);
+  for (let i = 0; i < n; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: 'application/pdf' });
+}
+
+/** Ouvre le PDF dans un nouvel onglet (à utiliser suite à un clic utilisateur). */
+export function openPdfBase64InNewTab(base64: string): void {
+  const blob = base64ToPdfBlob(base64);
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!w) {
+    URL.revokeObjectURL(url);
+    alert('Autorisez les pop-ups pour afficher le PDF.');
+    return;
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+}
+
+export function downloadPdfFromBase64(base64: string, filename: string): void {
+  const blob = base64ToPdfBlob(base64);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 /** Même rendu que le téléchargement, pour envoi e-mail / WhatsApp (pièce jointe). */
 export function generatePDFAsBase64(

@@ -1,7 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
-import { Plus, CheckCircle, Search, Calendar, User, Package, X, Edit2, Trash2, Calculator, ArrowRight, BookOpen, FileDown } from 'lucide-react';
-import { generatePDF } from '../utils/pdfGenerator';
+import { Plus, CheckCircle, Calendar, User, Package, X, Edit2, Trash2, Calculator, BookOpen, FileDown, History, Eye, Download } from 'lucide-react';
+import {
+  generatePDFSaveAndBase64,
+  generatePDFAsBase64,
+  openPdfBase64InNewTab,
+  downloadPdfFromBase64,
+} from '../utils/pdfGenerator';
+import {
+  loadCarnetPdfHistory,
+  appendCarnetPdfEntry,
+  getExportedItemIdsForClient,
+  type CarnetPdfHistoryEntry,
+  type CarnetPdfHistoryStore,
+} from '../utils/carnetPdfHistory';
 
 interface TabItem {
   id: number;
@@ -13,6 +25,16 @@ interface TabItem {
   productTaxRate: number;
   quantity: number;
   date: string;
+}
+
+function groupTabItemsByDate(items: TabItem[]): [string, TabItem[]][] {
+  const map = new Map<string, TabItem[]>();
+  for (const item of items) {
+    const d = item.date || '';
+    if (!map.has(d)) map.set(d, []);
+    map.get(d)!.push(item);
+  }
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
 const Tabs = () => {
@@ -44,6 +66,24 @@ const Tabs = () => {
     address: '',
     taxNumber: '',
   });
+
+  const [pdfHistoryStore, setPdfHistoryStore] = useState<CarnetPdfHistoryStore>(() => loadCarnetPdfHistory());
+  const [pdfPicker, setPdfPicker] = useState<{ clientId: number; name: string; items: TabItem[] } | null>(null);
+  const [selectedPdfItemIds, setSelectedPdfItemIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    setPdfHistoryStore(loadCarnetPdfHistory());
+  }, []);
+
+  const pdfPickerByDate = useMemo(
+    () => (pdfPicker ? groupTabItemsByDate(pdfPicker.items) : []),
+    [pdfPicker]
+  );
+
+  const openPdfPicker = (clientId: number, name: string, items: TabItem[]) => {
+    setPdfPicker({ clientId, name, items });
+    setSelectedPdfItemIds(new Set(items.map((i) => i.id)));
+  };
 
   const fetchData = async () => {
     try {
@@ -131,18 +171,36 @@ const Tabs = () => {
     }
   };
 
-  const handleGenerateBon = async (clientId: number, data: any) => {
+  /** PDF stocké, ou régénéré à partir des lignes encore présentes dans le carnet. */
+  const getHistoryPdfPayload = async (
+    h: CarnetPdfHistoryEntry
+  ): Promise<{ base64: string; filename: string } | null> => {
+    if (h.pdfBase64 && h.pdfFilename) {
+      return { base64: h.pdfBase64, filename: h.pdfFilename };
+    }
+    const idOrder = new Map(h.itemIds.map((id, idx) => [id, idx]));
+    let lines = tabs.filter((t) => t.clientId === h.clientId && h.itemIds.includes(t.id));
+    lines = [...lines].sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+    if (lines.length === 0) {
+      alert(
+        'Aucune ligne de ce BON ne figure plus dans le carnet. Impossible de rouvrir ce PDF tant que les lignes ne sont pas là (ou regénérez un nouveau BON).'
+      );
+      return null;
+    }
+    if (lines.length < h.itemIds.length) {
+      const ok = window.confirm(
+        `${h.itemIds.length - lines.length} ligne(s) ne sont plus dans le carnet. Le PDF sera régénéré avec les lignes restantes (le contenu peut différer). Continuer ?`
+      );
+      if (!ok) return null;
+    }
     try {
-      const client = clients.find((c) => c.id === clientId);
+      const client = clients.find((c) => c.id === h.clientId);
       const settingsRes = await api.get('/settings').catch(() => ({ data: {} }));
       const pb = settingsRes.data?.pdfBranding || {};
-      const bonPrefix = settingsRes.data?.numbering?.bonTab ?? 'BON-TAB-';
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      const pdfData = {
-        date: new Date().toISOString().split('T')[0],
-        noteNumber: `${bonPrefix}${clientId}-${Date.now().toString().slice(-4)}`,
-      };
-      const pdfItems = (data.items || []).map((item: TabItem) => ({
+      const docDate = h.createdAt.slice(0, 10);
+      const pdfData = { date: docDate, noteNumber: h.noteNumber };
+      const pdfItems = lines.map((item: TabItem) => ({
         productName: item.productName,
         quantity: item.quantity,
         unitPrice: item.productPrice,
@@ -150,17 +208,98 @@ const Tabs = () => {
         date: item.date,
       }));
       const entity = {
-        name: client?.name || data.name || 'Client',
+        name: client?.name || lines[0]?.clientName || 'Client',
         taxNumber: client?.taxNumber || '',
         address: client?.address || '',
         phone: client?.phone || '',
       };
-      generatePDF('BON', pdfData, pdfItems, entity, { ...user, ...pb });
+      return generatePDFAsBase64('BON', pdfData, pdfItems, entity, { ...user, ...pb });
+    } catch (e) {
+      console.error(e);
+      alert('Impossible de régénérer le PDF.');
+      return null;
+    }
+  };
+
+  const handleGenerateBonFromSelection = async () => {
+    if (!pdfPicker) return;
+    const { clientId, name, items } = pdfPicker;
+    const selectedItems = items.filter((i) => selectedPdfItemIds.has(i.id));
+    if (selectedItems.length === 0) {
+      alert('Sélectionnez au moins une ligne à inclure dans le PDF.');
+      return;
+    }
+    try {
+      const client = clients.find((c) => c.id === clientId);
+      const settingsRes = await api.get('/settings').catch(() => ({ data: {} }));
+      const pb = settingsRes.data?.pdfBranding || {};
+      const bonPrefix = settingsRes.data?.numbering?.bonTab ?? 'BON-TAB-';
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const noteNumber = `${bonPrefix}${clientId}-${Date.now().toString().slice(-4)}`;
+      const pdfData = {
+        date: new Date().toISOString().split('T')[0],
+        noteNumber,
+      };
+      const pdfItems = selectedItems.map((item: TabItem) => ({
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.productPrice,
+        taxRate: item.productTaxRate || 20,
+        date: item.date,
+      }));
+      const entity = {
+        name: client?.name || name || 'Client',
+        taxNumber: client?.taxNumber || '',
+        address: client?.address || '',
+        phone: client?.phone || '',
+      };
+      const { filename: pdfFilename, base64: pdfBase64 } = generatePDFSaveAndBase64(
+        'BON',
+        pdfData,
+        pdfItems,
+        entity,
+        { ...user, ...pb }
+      );
+
+      const entry: CarnetPdfHistoryEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        clientId,
+        createdAt: new Date().toISOString(),
+        noteNumber,
+        itemIds: selectedItems.map((i) => i.id),
+        pdfBase64,
+        pdfFilename,
+      };
+      setPdfHistoryStore((prev) => appendCarnetPdfEntry(prev, clientId, entry));
+      setPdfPicker(null);
     } catch (error) {
       console.error('Erreur generation BON:', error);
       alert('Erreur lors de la generation du BON.');
     }
   };
+
+  const togglePdfItem = (id: number) => {
+    setSelectedPdfItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePdfDateGroup = (dateItems: TabItem[], selectAll: boolean) => {
+    setSelectedPdfItemIds((prev) => {
+      const next = new Set(prev);
+      for (const it of dateItems) {
+        if (selectAll) next.add(it.id);
+        else next.delete(it.id);
+      }
+      return next;
+    });
+  };
+
+  const allPdfPickerSelected =
+    pdfPicker && pdfPicker.items.length > 0 && pdfPicker.items.every((i) => selectedPdfItemIds.has(i.id));
 
   const openCreateClientModal = () => {
     setNewClientData({ name: '', email: '', phone: '', address: '', taxNumber: '' });
@@ -232,7 +371,11 @@ const Tabs = () => {
             <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Aucune commande en cours</p>
           </div>
         ) : (
-          Object.entries(groupedTabs).map(([clientId, data]: [string, any]) => (
+          Object.entries(groupedTabs).map(([clientId, data]: [string, any]) => {
+            const cid = parseInt(clientId, 10);
+            const exportedIds = getExportedItemIdsForClient(pdfHistoryStore, cid);
+            const clientHistory = pdfHistoryStore[String(cid)] || [];
+            return (
             <div key={clientId} className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm hover:shadow-xl transition-all flex flex-col group overflow-hidden">
               <div className="p-6 bg-orange-50/30 border-b border-orange-100 flex justify-between items-center">
                 <div className="flex items-center space-x-4">
@@ -263,9 +406,11 @@ const Tabs = () => {
                     <CheckCircle className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => void handleGenerateBon(parseInt(clientId), data)}
-                    className="p-2 text-blue-600 hover:bg-white hover:shadow-sm rounded-xl transition-all"
-                    title="Générer BON PDF"
+                    type="button"
+                    disabled={!data.items?.length}
+                    onClick={() => openPdfPicker(cid, data.name, data.items as TabItem[])}
+                    className="p-2 text-blue-600 hover:bg-white hover:shadow-sm rounded-xl transition-all disabled:opacity-40 disabled:pointer-events-none"
+                    title="Télécharger BON PDF (choisir les lignes)"
                   >
                     <FileDown className="w-5 h-5" />
                   </button>
@@ -273,10 +418,25 @@ const Tabs = () => {
               </div>
               
               <div className="flex-1 p-6 space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar">
-                {data.items.map((item: TabItem) => (
-                  <div key={item.id} className="flex justify-between items-center group/item">
+                {data.items.map((item: TabItem) => {
+                  const onBon = exportedIds.has(item.id);
+                  const rate = 1 + (item.productTaxRate || 20) / 100;
+                  return (
+                  <div
+                    key={item.id}
+                    className={`flex justify-between items-center group/item rounded-xl px-2 py-1.5 -mx-2 transition-colors ${
+                      onBon ? 'bg-violet-50/90 border border-violet-200/80' : ''
+                    }`}
+                  >
                     <div className="flex-1 min-w-0">
-                      <div className="font-bold text-slate-700 truncate text-sm">{item.productName}</div>
+                      <div className={`font-bold truncate text-sm ${onBon ? 'text-violet-900' : 'text-slate-700'}`}>
+                        {item.productName}
+                        {onBon && (
+                          <span className="ml-2 text-[9px] font-black uppercase tracking-wider text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded-md align-middle">
+                            Sur un BON
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-slate-400 font-black uppercase tracking-tighter flex items-center space-x-1 mt-1">
                         <Calendar className="w-3 h-3" />
                         <span>{item.date}</span>
@@ -284,8 +444,8 @@ const Tabs = () => {
                     </div>
                     <div className="flex items-center space-x-4 ml-4">
                       <div className="text-right">
-                        <div className="font-black text-orange-600 text-sm">x{item.quantity}</div>
-                        <div className="text-[10px] font-bold text-slate-400">{(item.quantity * item.productPrice * 1.2).toFixed(2)} MAD</div>
+                        <div className={`font-black text-sm ${onBon ? 'text-violet-700' : 'text-orange-600'}`}>x{item.quantity}</div>
+                        <div className="text-[10px] font-bold text-slate-400">{(item.quantity * item.productPrice * rate).toFixed(2)} MAD</div>
                       </div>
                       <button
                         type="button"
@@ -304,8 +464,82 @@ const Tabs = () => {
                       </button>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
+
+              {clientHistory.length > 0 && (
+                <div className="px-6 pb-2 border-t border-slate-100/80 bg-slate-50/40">
+                  <div className="flex items-center gap-2 py-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                    <History className="w-3.5 h-3.5 text-slate-400" />
+                    Historique PDF ({clientHistory.length})
+                  </div>
+                  <ul className="max-h-[160px] overflow-y-auto custom-scrollbar space-y-2 pb-3">
+                    {[...clientHistory].reverse().map((h) => {
+                      const hasStoredFile = Boolean(h.pdfBase64 && h.pdfFilename);
+                      return (
+                      <li
+                        key={h.id}
+                        className="text-xs rounded-xl bg-white border border-slate-200/80 px-3 py-2 flex items-start justify-between gap-2"
+                      >
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <span className="font-bold text-slate-800 truncate">{h.noteNumber}</span>
+                          <span className="text-[10px] text-slate-500">
+                            {new Date(h.createdAt).toLocaleString('fr-FR', {
+                              dateStyle: 'short',
+                              timeStyle: 'short',
+                            })}
+                            {' · '}
+                            {h.itemIds.length} ligne{h.itemIds.length > 1 ? 's' : ''}
+                            {!hasStoredFile && (
+                              <span className="block text-amber-600/90 font-bold mt-0.5">
+                                Fichier non gardé en mémoire — ouverture depuis le carnet si les lignes existent encore
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            type="button"
+                            title={
+                              hasStoredFile
+                                ? 'Voir le PDF'
+                                : 'Voir le PDF (régénéré à partir des lignes du carnet)'
+                            }
+                            onClick={() => {
+                              void (async () => {
+                                const p = await getHistoryPdfPayload(h);
+                                if (p) openPdfBase64InNewTab(p.base64);
+                              })();
+                            }}
+                            className="p-2 rounded-lg text-slate-500 hover:bg-violet-50 hover:text-violet-700 transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title={
+                              hasStoredFile
+                                ? 'Télécharger à nouveau'
+                                : 'Télécharger (régénéré à partir des lignes du carnet)'
+                            }
+                            onClick={() => {
+                              void (async () => {
+                                const p = await getHistoryPdfPayload(h);
+                                if (p) downloadPdfFromBase64(p.base64, p.filename);
+                              })();
+                            }}
+                            className="p-2 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
 
               <div className="p-6 bg-slate-50/50 border-t border-slate-100">
                 <div className="flex justify-between items-center mb-1">
@@ -317,9 +551,134 @@ const Tabs = () => {
                 </div>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
+
+      {pdfPicker && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+              <div>
+                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                  <FileDown className="w-6 h-6 text-blue-600" />
+                  BON PDF
+                </h2>
+                <p className="text-sm font-bold text-slate-500 mt-1">{pdfPicker.name}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                  Cochez les lignes à inclure (groupées par date)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPdfPicker(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 custom-scrollbar space-y-4">
+              <div className="flex flex-wrap gap-2 px-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPdfItemIds(new Set(pdfPicker.items.map((i) => i.id)))}
+                  className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"
+                >
+                  Tout sélectionner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPdfItemIds(new Set())}
+                  className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200"
+                >
+                  Tout désélectionner
+                </button>
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer ml-auto">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    checked={!!allPdfPickerSelected}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedPdfItemIds(new Set(pdfPicker.items.map((i) => i.id)));
+                      } else {
+                        setSelectedPdfItemIds(new Set());
+                      }
+                    }}
+                  />
+                  Toutes les lignes
+                </label>
+              </div>
+              {pdfPickerByDate.map(([date, dateItems]) => {
+                const allInDate = dateItems.every((i) => selectedPdfItemIds.has(i.id));
+                const someInDate = dateItems.some((i) => selectedPdfItemIds.has(i.id));
+                return (
+                  <div key={date} className="rounded-2xl border border-slate-200 overflow-hidden">
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={allInDate}
+                        ref={(el) => {
+                          if (el) el.indeterminate = !allInDate && someInDate;
+                        }}
+                        onChange={(e) => togglePdfDateGroup(dateItems, e.target.checked)}
+                      />
+                      <Calendar className="w-4 h-4 text-slate-400" />
+                      <span className="text-sm font-black text-slate-800">{date || 'Sans date'}</span>
+                      <span className="text-[10px] font-bold text-slate-400 ml-auto">
+                        {dateItems.length} ligne{dateItems.length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <ul className="divide-y divide-slate-100">
+                      {dateItems.map((item) => (
+                        <li key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/80">
+                          <input
+                            type="checkbox"
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
+                            checked={selectedPdfItemIds.has(item.id)}
+                            onChange={() => togglePdfItem(item.id)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-slate-800 text-sm truncate">{item.productName}</div>
+                            <div className="text-[10px] font-bold text-slate-400">
+                              x{item.quantity} · {item.productPrice.toFixed(2)} MAD HT
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="p-6 border-t border-slate-100 bg-white shrink-0 flex flex-col gap-3">
+              <p className="text-xs font-bold text-slate-500 text-center">
+                {selectedPdfItemIds.size === 0
+                  ? 'Aucune ligne sélectionnée'
+                  : `${selectedPdfItemIds.size} ligne${selectedPdfItemIds.size > 1 ? 's' : ''} sélectionnée${selectedPdfItemIds.size > 1 ? 's' : ''}`}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPdfPicker(null)}
+                  className="flex-1 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateBonFromSelection()}
+                  className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100"
+                >
+                  Générer le PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, Edit2, Trash2, Search, X, Package, Upload, Download, ChevronRight, Save } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, X, Package, Upload, Save } from 'lucide-react';
 import Papa from 'papaparse';
 
 interface Product {
@@ -12,7 +12,20 @@ interface Product {
   stock: number;
 }
 
-const Products = () => {
+export type ProductPageVariant = 'sales' | 'purchase';
+
+export interface ProductsProps {
+  variant?: ProductPageVariant;
+}
+
+const Products = ({ variant = 'sales' }: ProductsProps) => {
+  const isPurchase = variant === 'purchase';
+  const ringFocus = isPurchase ? 'focus:ring-amber-500' : 'focus:ring-indigo-500';
+  const btnPrimary = isPurchase
+    ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-100'
+    : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100';
+  const iconBox = isPurchase ? 'bg-amber-50 text-amber-700' : 'bg-indigo-50 text-indigo-600';
+  const hoverEdit = isPurchase ? 'hover:text-amber-700 hover:bg-amber-50' : 'hover:text-indigo-600 hover:bg-indigo-50';
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -156,8 +169,14 @@ const Products = () => {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Gestion des Produits</h1>
-          <p className="text-slate-500 font-medium mt-1">Gérez votre inventaire et vos tarifs.</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+            {isPurchase ? 'Produits Achat' : 'Produits'}
+          </h1>
+          <p className="text-slate-500 font-medium mt-1">
+            {isPurchase
+              ? 'Références et coûts pour vos achats fournisseurs (catalogue partagé avec la vente).'
+              : 'Catalogue pour devis, bons de livraison, factures et carnet.'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center space-x-2 bg-white border border-slate-200 text-slate-600 px-5 py-2.5 rounded-2xl hover:bg-slate-50 transition-all cursor-pointer text-sm font-bold shadow-sm">
@@ -165,9 +184,13 @@ const Products = () => {
             <span>Importer</span>
             <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
           </label>
-          <button onClick={() => handleOpenModal()} className="flex items-center space-x-2 bg-indigo-600 text-white px-6 py-2.5 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 font-bold">
+          <button
+            type="button"
+            onClick={() => handleOpenModal()}
+            className={`flex items-center space-x-2 text-white px-6 py-2.5 rounded-2xl transition-all shadow-lg font-bold ${btnPrimary}`}
+          >
             <Plus className="w-5 h-5" />
-            <span>Nouveau Produit</span>
+            <span>{isPurchase ? 'Nouveau produit achat' : 'Nouveau produit'}</span>
           </button>
         </div>
       </div>
@@ -176,12 +199,12 @@ const Products = () => {
         <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/30">
           <div className="relative flex-1 max-w-md w-full">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-            <input type="text" placeholder="Rechercher un produit..." className="pl-12 pr-4 py-3 w-full bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            <input type="text" placeholder="Rechercher un produit..." className={`pl-12 pr-4 py-3 w-full bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 ${ringFocus} transition-all font-medium text-sm`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
           <div className="flex items-center space-x-3 w-full sm:w-auto">
             <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Trier:</span>
             <select 
-              className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className={`bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 ${ringFocus}`}
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
             >
@@ -196,7 +219,9 @@ const Products = () => {
             <thead>
               <tr className="bg-slate-50/50">
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Désignation</th>
-                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Prix HT</th>
+                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">
+                  {isPurchase ? "Prix d'achat HT" : 'Prix vente HT'}
+                </th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">TVA</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Stock</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
@@ -212,7 +237,7 @@ const Products = () => {
                   <tr key={product.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-8 py-6">
                       <div className="flex items-center space-x-4">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${iconBox}`}>
                           <Package className="w-5 h-5" />
                         </div>
                         <div>
@@ -240,10 +265,10 @@ const Products = () => {
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end space-x-2">
-                        <button onClick={() => handleOpenModal(product)} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
+                        <button type="button" onClick={() => handleOpenModal(product)} className={`p-2.5 text-slate-400 rounded-xl transition-all ${hoverEdit}`}>
                           <Edit2 className="w-5 h-5" />
                         </button>
-                        <button onClick={() => handleDelete(product.id)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                        <button type="button" onClick={() => handleDelete(product.id)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
                           <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
@@ -296,7 +321,7 @@ const Products = () => {
                 type="button"
                 disabled={!importPreview.valid.length}
                 onClick={commitBulkImport}
-                className="flex-1 rounded-2xl bg-indigo-600 py-3 font-bold text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50"
+                className={`flex-1 rounded-2xl py-3 font-bold text-white shadow-lg disabled:opacity-50 ${btnPrimary}`}
               >
                 Importer {importPreview.valid.length} produit(s)
               </button>
@@ -310,27 +335,35 @@ const Products = () => {
           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-xl font-black text-slate-800">
-                {editingProduct ? 'Modifier le Produit' : 'Nouveau Produit'}
+                {editingProduct
+                  ? isPurchase
+                    ? 'Modifier le produit (achat)'
+                    : 'Modifier le produit'
+                  : isPurchase
+                    ? 'Nouveau produit achat'
+                    : 'Nouveau produit'}
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+              <button type="button" onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-8 space-y-5">
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Désignation</label>
-                <input type="text" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+                <input type="text" required className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Description</label>
-                <textarea className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700" rows={2} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+                <textarea className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} rows={2} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Prix HT</label>
-                  <input type="number" step="0.01" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} />
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">
+                    {isPurchase ? "Prix d'achat HT" : 'Prix vente HT'}
+                  </label>
+                  <input type="number" step="0.01" required className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} />
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">TVA (%)</label>
-                  <select className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.taxRate} onChange={(e) => setFormData({...formData, taxRate: e.target.value})}>
+                  <select className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} value={formData.taxRate} onChange={(e) => setFormData({...formData, taxRate: e.target.value})}>
                     <option value="0">0%</option>
                     <option value="7">7%</option>
                     <option value="10">10%</option>
@@ -340,12 +373,12 @@ const Products = () => {
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Stock</label>
-                  <input type="number" required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700" value={formData.stock} onChange={(e) => setFormData({...formData, stock: e.target.value})} />
+                  <input type="number" required className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} value={formData.stock} onChange={(e) => setFormData({...formData, stock: e.target.value})} />
                 </div>
               </div>
               <div className="pt-4 flex space-x-3">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-3 bg-white border border-slate-200 text-gray-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Annuler</button>
-                <button type="submit" className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all flex items-center justify-center space-x-2">
+                <button type="submit" className={`flex-1 px-4 py-3 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg transition-all flex items-center justify-center space-x-2 ${btnPrimary}`}>
                   <Save className="w-4 h-4" />
                   <span>Enregistrer</span>
                 </button>

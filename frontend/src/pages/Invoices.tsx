@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import {
   Plus,
@@ -13,6 +13,7 @@ import {
   Archive,
   CheckCircle2,
   Trash2,
+  Calendar,
 } from 'lucide-react';
 import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
 import { SendDocumentActions } from '../components/SendDocumentActions';
@@ -47,6 +48,20 @@ type TimelineEvent = {
   dueDate?: string;
 };
 
+/** YYYY-MM-DD for comparison with <input type="date"> (handles ISO or date-only strings). */
+function invoiceCalendarDay(dateStr: string): string {
+  const s = (dateStr || '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const t = new Date(s).getTime();
+  if (Number.isNaN(t)) return '';
+  const d = new Date(t);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${da}`;
+}
+
 const Invoices = () => {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
@@ -64,8 +79,12 @@ const Invoices = () => {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  
+  const [sortMode, setSortMode] = useState<
+    'date_desc' | 'date_asc' | 'status_unpaid_first' | 'status_paid_first'
+  >('date_desc');
+  /** Empty = all dates; otherwise filter factures to this calendar day (YYYY-MM-DD). */
+  const [filterByDate, setFilterByDate] = useState('');
+
   const [formData, setFormData] = useState({
     clientId: '',
     date: new Date().toISOString().split('T')[0],
@@ -294,16 +313,55 @@ const Invoices = () => {
     }
   };
 
-  const filteredInvoices = invoices
-    .filter((invoice) =>
-      invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.clientName.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => {
+  const { filteredInvoices, listTotals } = useMemo(() => {
+    const paymentStatusRank = (inv: Invoice) => {
+      if (inv.paymentStatus === 'paid' || Number(inv.completed)) return 3;
+      if (inv.paymentStatus === 'partial') return 2;
+      return 1;
+    };
+
+    const filtered = invoices.filter((invoice) => {
+      const searchOk =
+        invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+      if (!searchOk) return false;
+      if (!filterByDate) return true;
+      return invoiceCalendarDay(invoice.date) === filterByDate;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
-      return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      if (sortMode === 'date_desc') return dateB - dateA;
+      if (sortMode === 'date_asc') return dateA - dateB;
+      if (sortMode === 'status_unpaid_first') {
+        const d = paymentStatusRank(a) - paymentStatusRank(b);
+        if (d !== 0) return d;
+        return dateB - dateA;
+      }
+      const d = paymentStatusRank(b) - paymentStatusRank(a);
+      if (d !== 0) return d;
+      return dateB - dateA;
     });
+
+    const listTotals = sorted.reduce(
+      (acc, inv) => {
+        const ttc = Number(inv.totalInclTax) || 0;
+        const paid = Number(inv.totalPaid || 0);
+        const reste =
+          inv.remaining !== undefined && inv.remaining !== null
+            ? Number(inv.remaining)
+            : ttc;
+        acc.montantTTC += ttc;
+        acc.regle += paid;
+        acc.reste += reste;
+        return acc;
+      },
+      { montantTTC: 0, regle: 0, reste: 0 }
+    );
+
+    return { filteredInvoices: sorted, listTotals };
+  }, [invoices, searchTerm, sortMode, filterByDate]);
 
   return (
     <div className="space-y-8">
@@ -345,14 +403,42 @@ const Invoices = () => {
                 Afficher archivées
               </label>
             )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Calendar className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+              <label htmlFor="invoice-filter-date" className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                Date
+              </label>
+              <input
+                id="invoice-filter-date"
+                type="date"
+                className="min-w-[11rem] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                value={filterByDate}
+                onChange={(e) => setFilterByDate(e.target.value)}
+                title="Choisir un jour — seules les factures de ce jour sont affichées"
+              />
+              {filterByDate ? (
+                <button
+                  type="button"
+                  onClick={() => setFilterByDate('')}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                  title="Afficher toutes les dates"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
             <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Trier:</span>
-            <select 
-              className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
+            <select
+              className="min-w-[14rem] bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              value={sortMode}
+              onChange={(e) =>
+                setSortMode(e.target.value as typeof sortMode)
+              }
             >
-              <option value="desc">Plus récent</option>
-              <option value="asc">Plus ancien</option>
+              <option value="date_desc">Date — plus récent</option>
+              <option value="date_asc">Date — plus ancien</option>
+              <option value="status_unpaid_first">Statut — en attente d’abord</option>
+              <option value="status_paid_first">Statut — payées d’abord</option>
             </select>
           </div>
         </div>
@@ -484,6 +570,28 @@ const Invoices = () => {
                 ))
               )}
             </tbody>
+            {!loading && filteredInvoices.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-emerald-200 bg-emerald-50/90">
+                  <td colSpan={3} className="px-8 py-4 text-sm font-black uppercase tracking-widest text-emerald-900">
+                    Totaux (liste affichée · {filteredInvoices.length} facture
+                    {filteredInvoices.length > 1 ? 's' : ''})
+                  </td>
+                  <td className="px-8 py-4 text-right font-mono text-base font-black text-slate-900">
+                    {listTotals.montantTTC.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                  </td>
+                  <td className="px-8 py-4 text-right font-mono text-base font-black text-emerald-800">
+                    {listTotals.regle.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                  </td>
+                  <td className="px-8 py-4 text-right font-mono text-base font-black text-rose-700">
+                    {listTotals.reste.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                  </td>
+                  <td colSpan={2} className="px-8 py-4 text-xs font-bold text-emerald-800/80">
+                    Montant TTC · Réglé · Reste
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

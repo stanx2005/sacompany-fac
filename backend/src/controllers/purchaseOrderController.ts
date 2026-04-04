@@ -1,7 +1,16 @@
 import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
-import { purchaseOrders, purchaseOrderItems, suppliers, products, deliveryNotes, deliveryNoteItems } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import {
+  purchaseOrders,
+  purchaseOrderItems,
+  suppliers,
+  products,
+  deliveryNotes,
+  deliveryNoteItems,
+  purchaseInvoices,
+  purchaseInvoiceItems,
+} from '../db/schema.js';
+import { eq, or, isNull } from 'drizzle-orm';
 import { docNumber, getMainConfig } from '../services/appConfig.js';
 
 const safeId = (id: string | string[] | undefined): string => {
@@ -11,7 +20,10 @@ const safeId = (id: string | string[] | undefined): string => {
 
 export const getPurchaseOrders = async (req: Request, res: Response) => {
   try {
-    const orders = await db.select({
+    const includeArchived =
+      req.query.includeArchived === '1' || String(req.query.includeArchived).toLowerCase() === 'true';
+
+    const sel = {
       id: purchaseOrders.id,
       orderNumber: purchaseOrders.orderNumber,
       date: purchaseOrders.date,
@@ -22,9 +34,14 @@ export const getPurchaseOrders = async (req: Request, res: Response) => {
       taxNumber: suppliers.taxNumber,
       address: suppliers.address,
       phone: suppliers.phone,
-    })
-    .from(purchaseOrders)
-    .leftJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id));
+      archived: purchaseOrders.archived,
+    };
+
+    let q = db.select(sel).from(purchaseOrders).leftJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id));
+    if (!includeArchived) {
+      q = q.where(or(eq(purchaseOrders.archived, 0), isNull(purchaseOrders.archived))) as typeof q;
+    }
+    const orders = await q;
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la récupération des bons de commande.', error });
@@ -119,7 +136,8 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
       supplierId: Number(supplierId || 0),
       date: String(date || new Date().toISOString().split('T')[0]),
       totalInclTax: Number(totalInclTax),
-      status: 'pending'
+      status: 'pending',
+      archived: 0,
     } as any).returning({ id: purchaseOrders.id });
 
     if (!result) throw new Error('Erreur lors de la création du bon de commande.');
@@ -141,5 +159,110 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
     res.status(201).json({ message: 'Bon de commande créé.', id: result.id });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la création du BC.', error });
+  }
+};
+
+export const archivePurchaseOrder = async (req: Request, res: Response) => {
+  const id = parseInt(safeId(req.params.id), 10);
+  if (Number.isNaN(id)) return res.status(400).json({ message: 'ID invalide.' });
+  const archived =
+    req.body?.archived === false || req.body?.archived === 0 || req.body?.archived === '0' ? 0 : 1;
+  try {
+    const [row] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    if (!row) return res.status(404).json({ message: 'Bon non trouvé.' });
+    await db.update(purchaseOrders).set({ archived }).where(eq(purchaseOrders.id, id));
+    res.json({ message: archived ? 'Bon archivé.' : 'Bon restauré.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur archive.', error });
+  }
+};
+
+export const deletePurchaseOrder = async (req: Request, res: Response) => {
+  const id = parseInt(safeId(req.params.id), 10);
+  if (Number.isNaN(id)) return res.status(400).json({ message: 'ID invalide.' });
+  try {
+    const linked = await db.select().from(purchaseInvoices).where(eq(purchaseInvoices.purchaseOrderId, id));
+    if (linked.length) {
+      return res.status(400).json({
+        message: 'Impossible de supprimer : une facture achat est liée à ce bon. Archivez le bon ou supprimez la facture.',
+      });
+    }
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, id));
+    await db.delete(purchaseOrders).where(eq(purchaseOrders.id, id));
+    res.json({ message: 'Bon de commande supprimé.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur suppression.', error });
+  }
+};
+
+export const convertPOToPurchaseInvoice = async (req: Request, res: Response) => {
+  const id = parseInt(safeId(req.params.id), 10);
+  if (Number.isNaN(id)) return res.status(400).json({ message: 'ID invalide.' });
+
+  const { invoiceNumber, date } = req.body as { invoiceNumber?: string; date?: string };
+
+  try {
+    const [existing] = await db
+      .select({ id: purchaseInvoices.id })
+      .from(purchaseInvoices)
+      .where(eq(purchaseInvoices.purchaseOrderId, id));
+    if (existing) {
+      return res.status(400).json({ message: 'Ce bon de commande a déjà une facture achat liée.' });
+    }
+
+    const [order] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    if (!order) return res.status(404).json({ message: 'Bon de commande non trouvé.' });
+
+    const poItems = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, id));
+    if (!poItems.length) {
+      return res.status(400).json({ message: 'Le bon ne contient aucune ligne.' });
+    }
+
+    let totalExcl = 0;
+    let totalIncl = 0;
+    for (const it of poItems) {
+      totalExcl += Number(it.quantity || 0) * Number(it.unitPrice || 0);
+      totalIncl += Number(it.totalLine || 0);
+    }
+    totalExcl = Math.round(totalExcl * 100) / 100;
+    totalIncl = Math.round(totalIncl * 100) / 100;
+    const totalTax = Math.round((totalIncl - totalExcl) * 100) / 100;
+
+    const num = String(invoiceNumber || '').trim() || `FACT-ACHAT-${Date.now()}`;
+    const d = String(date || '').trim() || String(order.date);
+
+    const [inv] = await db
+      .insert(purchaseInvoices)
+      .values({
+        supplierId: order.supplierId,
+        purchaseOrderId: id,
+        invoiceNumber: num,
+        date: d,
+        totalExclTax: totalExcl,
+        totalTax,
+        totalInclTax: totalIncl,
+        sourceType: 'from_order',
+        notes: null,
+        status: 'pending',
+        archived: 0,
+      } as any)
+      .returning({ id: purchaseInvoices.id });
+
+    if (!inv?.id) throw new Error('insert facture');
+
+    for (const it of poItems) {
+      await db.insert(purchaseInvoiceItems).values({
+        purchaseInvoiceId: inv.id,
+        productId: Number(it.productId || 0),
+        quantity: Number(it.quantity || 0),
+        unitPrice: Number(it.unitPrice || 0),
+        taxRate: Number(it.taxRate || 20),
+        totalLine: Number(it.totalLine || 0),
+      } as any);
+    }
+
+    res.status(201).json({ message: 'Facture achat créée depuis le bon de commande.', id: inv.id });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur conversion en facture achat.', error });
   }
 };

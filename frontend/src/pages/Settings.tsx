@@ -35,6 +35,8 @@ const SettingsPage = () => {
   const [numbering, setNumbering] = useState<Numbering>({});
   const [footerLegal, setFooterLegal] = useState('');
   const [logoDataUrl, setLogoDataUrl] = useState('');
+  const [logoMode, setLogoMode] = useState<'image' | 'text'>('image');
+  const [logoText, setLogoText] = useState('');
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
@@ -61,7 +63,17 @@ const SettingsPage = () => {
       const { data } = await api.get('/settings');
       setNumbering(data.numbering || {});
       setFooterLegal(data.pdfBranding?.footerLegal || '');
-      setLogoDataUrl(data.pdfBranding?.logoDataUrl || '');
+      const savedUrl = data.pdfBranding?.logoDataUrl || '';
+      setLogoDataUrl(savedUrl);
+      const m = data.pdfBranding?.logoMode;
+      setLogoMode(
+        m === 'text' || m === 'image'
+          ? m
+          : savedUrl.startsWith('data:image')
+            ? 'image'
+            : 'text'
+      );
+      setLogoText(data.pdfBranding?.logoText || '');
       if (data.messaging) setMessaging(data.messaging);
     } catch (e) {
       console.error(e);
@@ -93,7 +105,7 @@ const SettingsPage = () => {
 
   const handleSave = async () => {
     if (!isAdmin) return;
-    if (logoDataUrl.length > 12 * 1024 * 1024) {
+    if (logoMode === 'image' && logoDataUrl.length > 12 * 1024 * 1024) {
       alert('Logo trop volumineux (max. ~12 Mo en base64). Utilisez une image plus petite ou le bouton « Choisir une image » pour compression automatique.');
       return;
     }
@@ -101,7 +113,7 @@ const SettingsPage = () => {
       setSaving(true);
       await api.put('/settings', {
         numbering,
-        pdfBranding: { footerLegal, logoDataUrl },
+        pdfBranding: { footerLegal, logoDataUrl, logoMode, logoText },
       });
       alert('Paramètres enregistrés.');
     } catch (e: any) {
@@ -136,6 +148,7 @@ const SettingsPage = () => {
         try {
           const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
           setLogoDataUrl(dataUrl);
+          setLogoMode('image');
         } catch {
           alert('Impossible de convertir cette image.');
         }
@@ -353,10 +366,11 @@ const SettingsPage = () => {
       <div className="rounded-[2rem] border border-slate-200/60 bg-white p-6 shadow-sm sm:p-8">
         <h2 className="mb-4 text-lg font-black text-slate-800">PDF — pied de page & logo</h2>
         <p className="mb-4 text-sm text-slate-500">
-          Texte légal en bas des PDF (optionnel). Pour le logo, préférez le bouton ci-dessous : une image lourde ou un lien{' '}
-          <code className="rounded bg-slate-100 px-1">https://…</code> seul ne fonctionne pas dans les PDF — il faut une{' '}
-          <strong>data URL</strong> (<code className="rounded bg-slate-100 px-1">data:image/jpeg;base64,…</code>), générée
-          automatiquement depuis un fichier.
+          Texte légal en bas des PDF (optionnel). Pour l’en-tête (haut à gauche), choisissez soit une{' '}
+          <strong>image</strong>, soit un <strong>texte</strong> — comme avant l’upload de fichier. Une URL{' '}
+          <code className="rounded bg-slate-100 px-1">https://…</code> seule ne s’affiche pas dans les PDF : pour une image,
+          importez un fichier ou collez une <strong>data URL</strong> (<code className="rounded bg-slate-100 px-1">data:image/…</code>
+          ).
         </p>
         <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
           Pied de page (légal)
@@ -364,43 +378,107 @@ const SettingsPage = () => {
         <textarea
           rows={3}
           disabled={!isAdmin}
-          className="mb-4 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
+          className="mb-6 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
           value={footerLegal}
           onChange={(e) => setFooterLegal(e.target.value)}
         />
-        <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Logo</label>
-        {isAdmin && (
-          <label className="mb-4 inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-2.5 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100">
-            <Upload className="h-4 w-4" />
-            Choisir une image (redimensionnée automatiquement)
-            <input type="file" accept="image/*" className="hidden" onChange={handleLogoFile} />
-          </label>
-        )}
-        {logoDataUrl ? (
-          <div className="mb-4 flex flex-wrap items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
-            <img src={logoDataUrl} alt="Aperçu logo" className="h-16 max-w-[220px] object-contain" />
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setLogoDataUrl('')}
-                className="text-sm font-bold text-rose-600 hover:underline"
-              >
-                Retirer le logo
-              </button>
-            )}
+        <p className="mb-3 text-sm font-bold text-slate-700">En-tête des PDF (logo)</p>
+        <div className="grid gap-6 md:grid-cols-2">
+          <div
+            className={`rounded-2xl border p-4 transition-shadow ${
+              logoMode === 'image' ? 'border-emerald-300 bg-emerald-50/40 shadow-sm ring-2 ring-emerald-500/30' : 'border-slate-200 bg-slate-50/30'
+            }`}
+          >
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="radio"
+                name="pdf-logo-mode"
+                className="mt-1 h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                checked={logoMode === 'image'}
+                disabled={!isAdmin}
+                onChange={() => setLogoMode('image')}
+              />
+              <span>
+                <span className="block text-sm font-black text-slate-800">Image</span>
+                <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                  Fichier ou data URL — redimensionnement automatique à l’import.
+                </span>
+              </span>
+            </label>
+            <div className={`mt-4 space-y-3 pl-7 ${logoMode !== 'image' ? 'pointer-events-none opacity-45' : ''}`}>
+              {isAdmin && (
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-bold text-emerald-800 transition hover:bg-emerald-50">
+                  <Upload className="h-4 w-4" />
+                  Choisir une image
+                  <input type="file" accept="image/*" className="hidden" onChange={handleLogoFile} />
+                </label>
+              )}
+              {logoDataUrl.startsWith('data:image') ? (
+                <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-100 bg-white p-3">
+                  <img src={logoDataUrl} alt="Aperçu logo" className="h-16 max-w-[220px] object-contain" />
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setLogoDataUrl('')}
+                      className="text-sm font-bold text-rose-600 hover:underline"
+                    >
+                      Retirer l’image
+                    </button>
+                  )}
+                </div>
+              ) : null}
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Data URL (optionnel)
+                </label>
+                <textarea
+                  rows={3}
+                  disabled={!isAdmin || logoMode !== 'image'}
+                  placeholder="data:image/jpeg;base64,..."
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-mono text-xs text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
+                  value={logoDataUrl}
+                  onChange={(e) => setLogoDataUrl(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
-        ) : null}
-        <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
-          Logo (data URL — collage manuel si besoin)
-        </label>
-        <textarea
-          rows={3}
-          disabled={!isAdmin}
-          placeholder="data:image/jpeg;base64,..."
-          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
-          value={logoDataUrl}
-          onChange={(e) => setLogoDataUrl(e.target.value)}
-        />
+          <div
+            className={`rounded-2xl border p-4 transition-shadow ${
+              logoMode === 'text' ? 'border-emerald-300 bg-emerald-50/40 shadow-sm ring-2 ring-emerald-500/30' : 'border-slate-200 bg-slate-50/30'
+            }`}
+          >
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="radio"
+                name="pdf-logo-mode"
+                className="mt-1 h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                checked={logoMode === 'text'}
+                disabled={!isAdmin}
+                onChange={() => setLogoMode('text')}
+              />
+              <span>
+                <span className="block text-sm font-black text-slate-800">Texte</span>
+                <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                  Nom ou mention affichée en haut à gauche (plusieurs lignes possibles). Si vide, le nom d’entreprise du profil
+                  utilisateur est utilisé.
+                </span>
+              </span>
+            </label>
+            <div className={`mt-4 pl-7 ${logoMode !== 'text' ? 'pointer-events-none opacity-45' : ''}`}>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Texte en tête du PDF
+              </label>
+              <textarea
+                rows={6}
+                disabled={!isAdmin || logoMode !== 'text'}
+                placeholder="Ex. Ma société SARL"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
+                value={logoText}
+                onChange={(e) => setLogoText(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

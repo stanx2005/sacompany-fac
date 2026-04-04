@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Plus, Search, FileText, Calendar, User, Download, CheckCircle, X, ShoppingCart, RefreshCw, Truck, Save } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  FileText,
+  Download,
+  X,
+  ShoppingCart,
+  Truck,
+  Save,
+  Receipt,
+  Archive,
+  Trash2,
+} from 'lucide-react';
 import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
 import { SendDocumentActions } from '../components/SendDocumentActions';
 
@@ -15,6 +27,7 @@ interface PurchaseOrder {
   taxNumber: string;
   address: string;
   phone: string;
+  archived?: number | null;
 }
 
 const PurchaseOrders = () => {
@@ -29,6 +42,11 @@ const PurchaseOrders = () => {
   const [selectedClientId, setSelectedClientId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [convertFaOpen, setConvertFaOpen] = useState(false);
+  const [convertFaOrderId, setConvertFaOrderId] = useState<number | null>(null);
+  const [convertFaInvoiceNumber, setConvertFaInvoiceNumber] = useState('');
+  const [convertFaDate, setConvertFaDate] = useState(() => new Date().toISOString().split('T')[0]);
   
   const [formData, setFormData] = useState({
     supplierId: '',
@@ -40,10 +58,10 @@ const PurchaseOrders = () => {
     try {
       setLoading(true);
       const [ordersRes, suppliersRes, productsRes, clientsRes] = await Promise.all([
-        api.get('/purchase-orders'),
+        api.get('/purchase-orders', { params: { includeArchived: includeArchived ? '1' : undefined } }),
         api.get('/suppliers'),
         api.get('/products'),
-        api.get('/clients')
+        api.get('/clients'),
       ]);
       setOrders(ordersRes.data);
       setSuppliers(suppliersRes.data);
@@ -58,7 +76,7 @@ const PurchaseOrders = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [includeArchived]);
 
   const handleDownloadPDF = async (order: PurchaseOrder) => {
     try {
@@ -101,6 +119,49 @@ const PurchaseOrders = () => {
   const handleOpenConvertBL = (id: number) => {
     setSelectedOrderId(id);
     setIsConvertModalOpen(true);
+  };
+
+  const openConvertFa = (orderId: number) => {
+    setConvertFaOrderId(orderId);
+    setConvertFaInvoiceNumber('');
+    setConvertFaDate(new Date().toISOString().split('T')[0]);
+    setConvertFaOpen(true);
+  };
+
+  const handleConvertToPurchaseInvoice = async () => {
+    if (!convertFaOrderId) return;
+    try {
+      await api.post(`/purchase-orders/${convertFaOrderId}/convert-purchase-invoice`, {
+        invoiceNumber: convertFaInvoiceNumber.trim() || undefined,
+        date: convertFaDate || undefined,
+      });
+      alert('Facture achat créée. Retrouvez-la dans Achats → Facture.');
+      setConvertFaOpen(false);
+      setConvertFaOrderId(null);
+      fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Erreur lors de la conversion.');
+    }
+  };
+
+  const handleArchiveOrder = async (order: PurchaseOrder) => {
+    const next = Number(order.archived) === 1 ? 0 : 1;
+    try {
+      await api.patch(`/purchase-orders/${order.id}/archive`, { archived: next });
+      fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Erreur.');
+    }
+  };
+
+  const handleDeleteOrder = async (id: number) => {
+    if (!window.confirm('Supprimer définitivement ce bon de commande ?')) return;
+    try {
+      await api.delete(`/purchase-orders/${id}`);
+      fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Suppression impossible.');
+    }
   };
 
   const handleConvertToBL = async () => {
@@ -203,7 +264,16 @@ const PurchaseOrders = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-600">
+              <input
+                type="checkbox"
+                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                checked={includeArchived}
+                onChange={(e) => setIncludeArchived(e.target.checked)}
+              />
+              Archivés
+            </label>
             <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Trier:</span>
             <select 
               className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -235,13 +305,18 @@ const PurchaseOrders = () => {
                 <tr><td colSpan={6} className="px-8 py-20 text-center text-slate-400 font-medium">Aucun bon de commande trouvé.</td></tr>
               ) : (
                 filteredOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-slate-50/50 transition-colors group">
+                  <tr key={order.id} className={`hover:bg-slate-50/50 transition-colors group ${Number(order.archived) === 1 ? 'opacity-60' : ''}`}>
                     <td className="px-8 py-6">
-                      <div className="flex items-center space-x-3">
+                      <div className="flex flex-wrap items-center gap-2">
                         <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
                           <ShoppingCart className="w-4 h-4" />
                         </div>
                         <span className="font-black text-slate-900 tracking-tight">{order.orderNumber}</span>
+                        {Number(order.archived) === 1 && (
+                          <span className="rounded-md bg-slate-200 px-1.5 py-0.5 text-[9px] font-black uppercase text-slate-600">
+                            Archivé
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-8 py-6 font-bold text-slate-700">{order.supplierName}</td>
@@ -257,11 +332,20 @@ const PurchaseOrders = () => {
                       </span>
                     </td>
                     <td className="px-8 py-6 text-right">
-                      <div className="flex items-center justify-end space-x-1">
-                        <button onClick={() => handleOpenConvertBL(order.id)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Convertir en BL">
+                      <div className="flex flex-wrap items-center justify-end gap-0.5">
+                        <button type="button" onClick={() => openConvertFa(order.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Convertir en facture achat">
+                          <Receipt className="w-5 h-5" />
+                        </button>
+                        <button type="button" onClick={() => handleOpenConvertBL(order.id)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Convertir en BL">
                           <Truck className="w-5 h-5" />
                         </button>
-                        <button onClick={() => handleDownloadPDF(order)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
+                        <button type="button" onClick={() => void handleArchiveOrder(order)} className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all" title={Number(order.archived) === 1 ? 'Restaurer' : 'Archiver'}>
+                          <Archive className="w-5 h-5" />
+                        </button>
+                        <button type="button" onClick={() => void handleDeleteOrder(order.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Supprimer">
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                        <button type="button" onClick={() => handleDownloadPDF(order)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
                           <Download className="w-5 h-5" />
                         </button>
                         <SendDocumentActions
@@ -280,6 +364,61 @@ const PurchaseOrders = () => {
           </table>
         </div>
       </div>
+
+      {convertFaOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-[2rem] bg-white shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/50 p-6">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-gray-800">
+                <Receipt className="h-6 w-6 text-rose-600" />
+                <span>Facture achat depuis le BC</span>
+              </h2>
+              <button type="button" onClick={() => setConvertFaOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="space-y-4 p-8">
+              <p className="text-sm text-slate-600">
+                Les lignes du bon seront copiées dans une nouvelle facture achat. Un seul lien par bon est autorisé.
+              </p>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">N° facture fournisseur (optionnel)</label>
+                <input
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 font-medium outline-none focus:ring-2 focus:ring-rose-500"
+                  placeholder={`Auto : FACT-ACHAT-…`}
+                  value={convertFaInvoiceNumber}
+                  onChange={(e) => setConvertFaInvoiceNumber(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Date facture</label>
+                <input
+                  type="date"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 font-medium outline-none focus:ring-2 focus:ring-rose-500"
+                  value={convertFaDate}
+                  onChange={(e) => setConvertFaDate(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConvertFaOpen(false)}
+                  className="flex-1 rounded-2xl border border-slate-200 py-3 font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleConvertToPurchaseInvoice()}
+                  className="flex-1 rounded-2xl bg-rose-600 py-3 font-bold text-white shadow-lg shadow-rose-100 hover:bg-rose-700"
+                >
+                  Créer la facture
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Convert to BL Modal */}
       {isConvertModalOpen && (

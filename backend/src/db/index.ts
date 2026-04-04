@@ -128,6 +128,60 @@ export async function ensureAuxiliarySchema(): Promise<void> {
   } catch {
     /* colonne déjà présente */
   }
+
+  try {
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS purchase_invoices (
+        id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+        supplier_id integer REFERENCES suppliers(id),
+        invoice_number text NOT NULL,
+        date text NOT NULL,
+        total_excl_tax real NOT NULL DEFAULT 0,
+        total_tax real NOT NULL DEFAULT 0,
+        total_incl_tax real NOT NULL DEFAULT 0,
+        source_type text NOT NULL,
+        file_path text,
+        file_mime text,
+        original_filename text,
+        notes text,
+        status text DEFAULT 'pending',
+        created_at integer
+      )
+    `);
+  } catch (e) {
+    console.error('ensureAuxiliarySchema purchase_invoices:', e);
+  }
+
+  try {
+    await client.execute(`ALTER TABLE purchase_orders ADD COLUMN archived integer DEFAULT 0`);
+  } catch {
+    /* duplicate column */
+  }
+  try {
+    await client.execute(`ALTER TABLE purchase_invoices ADD COLUMN purchase_order_id integer REFERENCES purchase_orders(id)`);
+  } catch {
+    /* duplicate column */
+  }
+  try {
+    await client.execute(`ALTER TABLE purchase_invoices ADD COLUMN archived integer DEFAULT 0`);
+  } catch {
+    /* duplicate column */
+  }
+  try {
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS purchase_invoice_items (
+        id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+        purchase_invoice_id integer REFERENCES purchase_invoices(id),
+        product_id integer REFERENCES products(id),
+        quantity integer NOT NULL,
+        unit_price real NOT NULL,
+        tax_rate real NOT NULL,
+        total_line real NOT NULL
+      )
+    `);
+  } catch (e) {
+    console.error('ensureAuxiliarySchema purchase_invoice_items:', e);
+  }
 }
 
 export const db = drizzle(client, { schema });

@@ -17,6 +17,9 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Fichiers uploadés (factures achat, etc.)
+backend/uploads/
+
 # SQLite database (if any local remains)
 *.db
 *.db-journal
