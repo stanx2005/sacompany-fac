@@ -5,6 +5,8 @@ import { asc, eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { logActivity } from '../services/auditLog.js';
 
+type AppRole = 'admin' | 'staff' | 'accountant';
+
 export const listUsers = async (_req: Request, res: Response) => {
   try {
     const rows = await db
@@ -30,7 +32,7 @@ export const createUser = async (req: Request, res: Response) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
   const roleRaw = String(req.body?.role || 'staff');
-  const role = roleRaw === 'admin' ? 'admin' : 'staff';
+  const role: AppRole = roleRaw === 'admin' || roleRaw === 'accountant' ? roleRaw : 'staff';
 
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'Nom, email et mot de passe requis.' });
@@ -83,5 +85,66 @@ export const createUser = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('createUser:', error);
     res.status(500).json({ message: 'Erreur création utilisateur.', error });
+  }
+};
+
+export const deleteUser = async (req: Request, res: Response) => {
+  const adminId = Number((req as { user?: { id?: number } }).user?.id || 0);
+  const targetId = Number(req.params.id);
+  if (!Number.isFinite(targetId) || targetId <= 0) {
+    return res.status(400).json({ message: 'Identifiant utilisateur invalide.' });
+  }
+  if (targetId === adminId) {
+    return res.status(400).json({ message: 'Vous ne pouvez pas supprimer votre propre compte.' });
+  }
+
+  try {
+    const target = await db.query.users.findFirst({ where: eq(users.id, targetId) });
+    if (!target) return res.status(404).json({ message: 'Utilisateur introuvable.' });
+
+    if (target.role === 'admin') {
+      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'admin'));
+      if (admins.length <= 1) {
+        return res.status(400).json({ message: 'Impossible de supprimer le dernier administrateur.' });
+      }
+    }
+
+    await db.delete(users).where(eq(users.id, targetId));
+    await logActivity(adminId, 'delete', 'user', targetId, {
+      email: target.email,
+      role: target.role,
+    });
+    return res.json({ message: 'Utilisateur supprimé.' });
+  } catch (error) {
+    console.error('deleteUser:', error);
+    return res.status(500).json({ message: 'Erreur suppression utilisateur.', error });
+  }
+};
+
+export const resetUserPassword = async (req: Request, res: Response) => {
+  const adminId = Number((req as { user?: { id?: number } }).user?.id || 0);
+  const targetId = Number(req.params.id);
+  const newPassword = String(req.body?.newPassword || '');
+  if (!Number.isFinite(targetId) || targetId <= 0) {
+    return res.status(400).json({ message: 'Identifiant utilisateur invalide.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'Mot de passe : au moins 6 caractères.' });
+  }
+
+  try {
+    const target = await db.query.users.findFirst({ where: eq(users.id, targetId) });
+    if (!target) return res.status(404).json({ message: 'Utilisateur introuvable.' });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await db.update(users).set({ password: hashed }).where(eq(users.id, targetId));
+    await logActivity(adminId, 'reset_password', 'user', targetId, {
+      email: target.email,
+      role: target.role,
+    });
+    return res.json({ message: 'Mot de passe utilisateur mis à jour.' });
+  } catch (error) {
+    console.error('resetUserPassword:', error);
+    return res.status(500).json({ message: 'Erreur mise à jour mot de passe.', error });
   }
 };

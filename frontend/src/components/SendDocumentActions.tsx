@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from '../services/api';
 import { Mail, MessageCircle, Loader2 } from 'lucide-react';
+import { useAuthStore } from '../store/authStore';
 
 type Props = {
   preparePdf: () => Promise<{ filename: string; base64: string }>;
@@ -20,6 +21,8 @@ export function SendDocumentActions({
   caption,
   className = '',
 }: Props) {
+  const role = useAuthStore((s) => s.user?.role);
+  const isAccountant = role === 'accountant';
   const [busy, setBusy] = useState(false);
 
   const send = async (channel: 'email' | 'whatsapp') => {
@@ -48,7 +51,7 @@ export function SendDocumentActions({
     <div className={`flex items-center gap-0.5 ${className}`}>
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || isAccountant}
         onClick={() => void send('email')}
         title="Envoyer le PDF par e-mail"
         className="rounded-xl p-2 text-slate-400 transition-all hover:bg-sky-50 hover:text-sky-600 disabled:opacity-50"
@@ -57,7 +60,7 @@ export function SendDocumentActions({
       </button>
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || isAccountant}
         onClick={() => void send('whatsapp')}
         title="Envoyer le PDF par WhatsApp (UltraMsg)"
         className="rounded-xl p-2 text-slate-400 transition-all hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"

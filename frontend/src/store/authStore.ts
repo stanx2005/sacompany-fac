@@ -1,10 +1,20 @@
 import { create } from 'zustand';
 
+type AppRole = 'admin' | 'staff' | 'accountant';
+
+type AuthUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: AppRole;
+  [k: string]: any;
+};
+
 interface AuthState {
-  user: any | null;
+  user: AuthUser | null;
   token: string | null;
-  setAuth: (user: any, token: string) => void;
-  updateUser: (user: any) => void;
+  setAuth: (user: AuthUser, token: string) => void;
+  updateUser: (user: AuthUser) => void;
   logout: () => void;
 }
 

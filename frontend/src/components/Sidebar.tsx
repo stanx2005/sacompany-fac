@@ -31,8 +31,24 @@ type SidebarProps = {
 const Sidebar = ({ mobileOpen = false, onClose }: SidebarProps) => {
   const logout = useAuthStore((state) => state.logout);
   const role = useAuthStore((state) => state.user?.role);
+  const isAccountant = role === 'accountant';
 
-  const menuItems = [
+  const menuItems = isAccountant
+    ? [
+        {
+          group: 'PDF',
+          items: [
+            { icon: FileText, label: 'Devis', path: '/quotes' },
+            { icon: ClipboardList, label: 'Bon de Livraison', path: '/delivery-notes' },
+            { icon: FileText, label: 'Factures', path: '/invoices' },
+            { icon: BookOpen, label: 'Carnet (Tabs)', path: '/tabs' },
+            { icon: ShoppingCart, label: 'Bon de Commande', path: '/purchase-orders' },
+            { icon: Receipt, label: 'Facture Achat', path: '/purchase-invoices' },
+          ],
+        },
+        { group: 'Compte', items: [{ icon: UserCircle, label: 'Mon Profil', path: '/profile' }] },
+      ]
+    : [
     { group: 'Général', items: [
       { icon: LayoutDashboard, label: 'Tableau de bord', path: '/' },
       { icon: Bell, label: 'Rappels', path: '/reminders' },

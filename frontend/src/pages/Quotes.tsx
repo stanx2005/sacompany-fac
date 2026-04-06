@@ -3,6 +3,7 @@ import api from '../services/api';
 import { Plus, Search, FileText, Calendar, User, Download, CheckCircle, X, History, MessageSquare, ShoppingCart, Truck, Edit2, Trash2, RefreshCw, Save } from 'lucide-react';
 import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
 import { SendDocumentActions } from '../components/SendDocumentActions';
+import { useAuthStore } from '../store/authStore';
 
 interface Quote {
   id: number;
@@ -18,6 +19,7 @@ interface Quote {
 }
 
 const Quotes = () => {
+  const isAccountant = useAuthStore((s) => s.user?.role === 'accountant');
   const CREATE_CLIENT_OPTION = '__create_client__';
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -104,6 +106,7 @@ const Quotes = () => {
   };
 
   const handleOpenEditModal = async (quote: Quote) => {
+    if (isAccountant) return;
     try {
       const response = await api.get(`/quotes/${quote.id}/items`);
       setEditingQuote(quote);
@@ -117,13 +120,14 @@ const Quotes = () => {
           taxRate: item.taxRate
         }))
       });
-      setIsModalOpen(true);
+      if (!isAccountant) setIsModalOpen(true);
     } catch (error) {
       console.error('Erreur chargement items:', error);
     }
   };
 
   const handleConvertToInvoice = async (id: number) => {
+    if (isAccountant) return;
     if (window.confirm('Convertir ce Devis en Facture ?')) {
       try {
         await api.post(`/quotes/${id}/convert-invoice`);
@@ -164,6 +168,7 @@ const Quotes = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     const data = {
       ...formData,
       clientId: parseInt(formData.clientId),
@@ -197,6 +202,7 @@ const Quotes = () => {
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       setCreatingClient(true);
       await api.post('/clients', newClientData);
@@ -241,7 +247,7 @@ const Quotes = () => {
               date: new Date().toISOString().split('T')[0],
               items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
             });
-            setIsModalOpen(true);
+            if (!isAccountant) setIsModalOpen(true);
           }}
           className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold"
         >

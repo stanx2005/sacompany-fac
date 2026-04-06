@@ -33,7 +33,9 @@ interface DeliveryNote {
 }
 
 const DeliveryNotes = () => {
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  const role = useAuthStore((s) => s.user?.role);
+  const isAdmin = role === 'admin';
+  const isAccountant = role === 'accountant';
   const CREATE_CLIENT_OPTION = '__create_client__';
   const [notes, setNotes] = useState<DeliveryNote[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -133,6 +135,7 @@ const DeliveryNotes = () => {
   };
 
   const handleConvertToInvoice = async (id: number) => {
+    if (isAccountant) return;
     if (window.confirm('Convertir ce Bon de Livraison en Facture ?')) {
       try {
         await api.post(`/delivery-notes/${id}/convert-invoice`);
@@ -145,6 +148,7 @@ const DeliveryNotes = () => {
   };
 
   const toggleArchive = async (note: DeliveryNote, archived: boolean) => {
+    if (isAccountant) return;
     if (!isAdmin) return;
     if (!window.confirm(archived ? 'Archiver ce bon de livraison ?' : 'Restaurer ce bon ?')) return;
     try {
@@ -156,6 +160,7 @@ const DeliveryNotes = () => {
   };
 
   const toggleBlCompleted = async (note: DeliveryNote, completed: boolean) => {
+    if (isAccountant) return;
     const ok = window.confirm(
       completed
         ? 'Marquer ce bon comme terminé ? Vous pourrez ensuite le supprimer (admin).'
@@ -171,6 +176,7 @@ const DeliveryNotes = () => {
   };
 
   const handleDeleteBl = async (note: DeliveryNote) => {
+    if (isAccountant) return;
     if (!isAdmin) return;
     if (!Number(note.completed || 0)) return;
     if (!window.confirm(`Supprimer définitivement le bon ${note.noteNumber} ?`)) return;
@@ -211,6 +217,7 @@ const DeliveryNotes = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       await api.post('/delivery-notes', {
         ...formData,
@@ -237,6 +244,7 @@ const DeliveryNotes = () => {
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       setCreatingClient(true);
       await api.post('/clients', newClientData);
@@ -274,8 +282,11 @@ const DeliveryNotes = () => {
           <p className="text-slate-500 font-medium mt-1">Gérez vos expéditions et bons de transport.</p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold"
+          onClick={() => {
+            if (!isAccountant) setIsModalOpen(true);
+          }}
+          disabled={isAccountant}
+          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus className="w-5 h-5" />
           <span>Nouveau Bon</span>

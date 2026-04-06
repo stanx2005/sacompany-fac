@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
+import { requireRoles } from '../middleware/requireRoles.js';
 import {
   listPurchaseInvoices,
   getPurchaseInvoiceItems,
@@ -15,9 +16,10 @@ const router = Router();
 router.use(authenticateToken);
 
 router.get('/', listPurchaseInvoices);
-router.post('/', createManualPurchaseInvoice);
+router.post('/', requireRoles(['admin', 'staff']), createManualPurchaseInvoice);
 router.post(
   '/upload',
+  requireRoles(['admin', 'staff']),
   (req, res, next) => {
     purchaseInvoiceUploadMiddleware.single('file')(req, res, (err: unknown) => {
       if (err) {
@@ -31,7 +33,7 @@ router.post(
 );
 router.get('/:id/items', getPurchaseInvoiceItems);
 router.get('/:id/attachment', getPurchaseInvoiceAttachment);
-router.patch('/:id/archive', archivePurchaseInvoice);
-router.delete('/:id', deletePurchaseInvoice);
+router.patch('/:id/archive', requireRoles(['admin', 'staff']), archivePurchaseInvoice);
+router.delete('/:id', requireRoles(['admin', 'staff']), deletePurchaseInvoice);
 
 export default router;

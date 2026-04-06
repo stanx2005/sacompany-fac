@@ -9,7 +9,7 @@ type AdminUserRow = {
   id: number;
   name: string;
   email: string;
-  role: string;
+  role: 'admin' | 'staff' | 'accountant';
   createdAt?: string | null;
 };
 
@@ -44,8 +44,11 @@ const SettingsPage = () => {
     name: '',
     email: '',
     password: '',
-    role: 'staff' as 'admin' | 'staff',
+    role: 'staff' as 'admin' | 'staff' | 'accountant',
   });
+  const [resettingUserId, setResettingUserId] = useState<number | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
+  const [passwordDraftByUserId, setPasswordDraftByUserId] = useState<Record<number, string>>({});
   const [messaging, setMessaging] = useState<{
     resendConfigured: boolean;
     gmailConfigured: boolean;
@@ -188,6 +191,42 @@ const SettingsPage = () => {
     }
   };
 
+  const handleDeleteUser = async (u: AdminUserRow) => {
+    if (!isAdmin) return;
+    if (!window.confirm(`Supprimer l'utilisateur ${u.name} (${u.email}) ?`)) return;
+    try {
+      setDeletingUserId(u.id);
+      await api.delete(`/admin/users/${u.id}`);
+      await loadUsers();
+      alert('Utilisateur supprimé.');
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'Erreur suppression utilisateur.';
+      alert(msg);
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
+  const handleResetPassword = async (u: AdminUserRow) => {
+    if (!isAdmin) return;
+    const newPassword = String(passwordDraftByUserId[u.id] || '');
+    if (newPassword.length < 6) {
+      alert('Mot de passe : au moins 6 caractères.');
+      return;
+    }
+    try {
+      setResettingUserId(u.id);
+      await api.patch(`/admin/users/${u.id}/password`, { newPassword });
+      setPasswordDraftByUserId((prev) => ({ ...prev, [u.id]: '' }));
+      alert('Mot de passe mis à jour.');
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'Erreur mise à jour mot de passe.';
+      alert(msg);
+    } finally {
+      setResettingUserId(null);
+    }
+  };
+
   const exportJson = async () => {
     if (!isAdmin) return;
     try {
@@ -292,9 +331,10 @@ const SettingsPage = () => {
               <select
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                 value={newUser.role}
-                onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'admin' | 'staff' })}
+                onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'admin' | 'staff' | 'accountant' })}
               >
                 <option value="staff">staff</option>
+                <option value="accountant">accountant</option>
                 <option value="admin">admin</option>
               </select>
             </div>
@@ -318,16 +358,48 @@ const SettingsPage = () => {
           ) : (
             <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-100">
               {adminUsers.map((u) => (
-                <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
-                  <span className="font-bold text-slate-900">{u.name}</span>
+                <li key={u.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <span className="min-w-40 font-bold text-slate-900">{u.name}</span>
                   <span className="font-mono text-slate-600">{u.email}</span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${
-                      u.role === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+                      u.role === 'admin'
+                        ? 'bg-amber-100 text-amber-800'
+                        : u.role === 'accountant'
+                          ? 'bg-sky-100 text-sky-700'
+                          : 'bg-slate-100 text-slate-600'
                     }`}
                   >
                     {u.role}
                   </span>
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                    <input
+                      type="password"
+                      minLength={6}
+                      placeholder="Nouveau mot de passe"
+                      className="w-44 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={passwordDraftByUserId[u.id] || ''}
+                      onChange={(e) =>
+                        setPasswordDraftByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      disabled={resettingUserId === u.id}
+                      onClick={() => handleResetPassword(u)}
+                      className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-60"
+                    >
+                      {resettingUserId === u.id ? 'MAJ...' : 'Changer mdp'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deletingUserId === u.id}
+                      onClick={() => handleDeleteUser(u)}
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
+                    >
+                      {deletingUserId === u.id ? 'Suppression...' : 'Supprimer'}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

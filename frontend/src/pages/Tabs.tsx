@@ -14,6 +14,7 @@ import {
   type CarnetPdfHistoryEntry,
   type CarnetPdfHistoryStore,
 } from '../utils/carnetPdfHistory';
+import { useAuthStore } from '../store/authStore';
 
 interface TabItem {
   id: number;
@@ -38,6 +39,7 @@ function groupTabItemsByDate(items: TabItem[]): [string, TabItem[]][] {
 }
 
 const Tabs = () => {
+  const isAccountant = useAuthStore((s) => s.user?.role === 'accountant');
   const CREATE_CLIENT_OPTION = '__create_client__';
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -109,6 +111,7 @@ const Tabs = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       await api.post('/tabs', {
         ...formData,
@@ -124,6 +127,7 @@ const Tabs = () => {
   };
 
   const handleCloseTab = async (clientId: number) => {
+    if (isAccountant) return;
     if (window.confirm('Voulez-vous clôturer toutes les commandes pour ce client et générer une facture ?')) {
       try {
         await api.put(`/tabs/close/${clientId}`);
@@ -135,6 +139,7 @@ const Tabs = () => {
   };
 
   const handleDeleteItem = async (id: number) => {
+    if (isAccountant) return;
     if (window.confirm('Supprimer cet article du carnet ?')) {
       try {
         await api.delete(`/tabs/${id}`);
@@ -156,6 +161,7 @@ const Tabs = () => {
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     if (!editingItem) return;
     try {
       await api.patch(`/tabs/${editingItem.id}`, {
@@ -308,6 +314,7 @@ const Tabs = () => {
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       setCreatingClient(true);
       await api.post('/clients', newClientData);
@@ -351,7 +358,7 @@ const Tabs = () => {
         <button 
           onClick={() => {
             setFormData({ ...formData, clientId: '' });
-            setIsModalOpen(true);
+            if (!isAccountant) setIsModalOpen(true);
           }}
           className="flex items-center space-x-2 bg-orange-600 text-white px-6 py-2.5 rounded-2xl hover:bg-orange-700 transition-all shadow-lg shadow-orange-100 font-bold"
         >
@@ -391,7 +398,7 @@ const Tabs = () => {
                   <button 
                     onClick={() => {
                       setFormData({ ...formData, clientId: clientId });
-                      setIsModalOpen(true);
+                      if (!isAccountant) setIsModalOpen(true);
                     }}
                     className="p-2 text-orange-600 hover:bg-white hover:shadow-sm rounded-xl transition-all"
                     title="Ajouter un produit"

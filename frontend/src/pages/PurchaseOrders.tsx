@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
 import { SendDocumentActions } from '../components/SendDocumentActions';
+import { useAuthStore } from '../store/authStore';
 
 interface PurchaseOrder {
   id: number;
@@ -31,6 +32,7 @@ interface PurchaseOrder {
 }
 
 const PurchaseOrders = () => {
+  const isAccountant = useAuthStore((s) => s.user?.role === 'accountant');
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -117,11 +119,13 @@ const PurchaseOrders = () => {
   };
 
   const handleOpenConvertBL = (id: number) => {
+    if (isAccountant) return;
     setSelectedOrderId(id);
     setIsConvertModalOpen(true);
   };
 
   const openConvertFa = (orderId: number) => {
+    if (isAccountant) return;
     setConvertFaOrderId(orderId);
     setConvertFaInvoiceNumber('');
     setConvertFaDate(new Date().toISOString().split('T')[0]);
@@ -129,6 +133,7 @@ const PurchaseOrders = () => {
   };
 
   const handleConvertToPurchaseInvoice = async () => {
+    if (isAccountant) return;
     if (!convertFaOrderId) return;
     try {
       await api.post(`/purchase-orders/${convertFaOrderId}/convert-purchase-invoice`, {
@@ -145,6 +150,7 @@ const PurchaseOrders = () => {
   };
 
   const handleArchiveOrder = async (order: PurchaseOrder) => {
+    if (isAccountant) return;
     const next = Number(order.archived) === 1 ? 0 : 1;
     try {
       await api.patch(`/purchase-orders/${order.id}/archive`, { archived: next });
@@ -155,6 +161,7 @@ const PurchaseOrders = () => {
   };
 
   const handleDeleteOrder = async (id: number) => {
+    if (isAccountant) return;
     if (!window.confirm('Supprimer définitivement ce bon de commande ?')) return;
     try {
       await api.delete(`/purchase-orders/${id}`);
@@ -165,6 +172,7 @@ const PurchaseOrders = () => {
   };
 
   const handleConvertToBL = async () => {
+    if (isAccountant) return;
     if (!selectedClientId) return alert('Veuillez sélectionner un client.');
     try {
       await api.post(`/purchase-orders/${selectedOrderId}/convert-bl`, { clientId: selectedClientId });
@@ -206,6 +214,7 @@ const PurchaseOrders = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       await api.post('/purchase-orders', {
         ...formData,
@@ -244,8 +253,11 @@ const PurchaseOrders = () => {
           <p className="text-slate-500 font-medium mt-1">Gérez vos commandes auprès des fournisseurs.</p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold"
+          onClick={() => {
+            if (!isAccountant) setIsModalOpen(true);
+          }}
+          disabled={isAccountant}
+          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus className="w-5 h-5" />
           <span>Nouveau Bon</span>

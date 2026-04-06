@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import { generatePDF } from '../utils/pdfGenerator';
+import { useAuthStore } from '../store/authStore';
 import {
   Plus,
   Search,
@@ -41,6 +42,7 @@ type LineItem = { productId: string; quantity: number; unitPrice: number; taxRat
 const emptyLine = (): LineItem => ({ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 });
 
 const PurchaseInvoices = () => {
+  const isAccountant = useAuthStore((s) => s.user?.role === 'accountant');
   const [rows, setRows] = useState<PurchaseInvoiceRow[]>([]);
   const [suppliers, setSuppliers] = useState<
     { id: number; name: string; taxNumber?: string; address?: string; phone?: string }[]
@@ -165,6 +167,7 @@ const PurchaseInvoices = () => {
 
   const submitManual = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       const validItems = manualForm.items.filter((i) => i.productId && Number(i.quantity) >= 1);
       if (validItems.length > 0) {
@@ -204,6 +207,7 @@ const PurchaseInvoices = () => {
 
   const submitUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     if (!uploadForm.file) {
       alert('Choisissez un fichier PDF ou image.');
       return;
@@ -334,6 +338,7 @@ const PurchaseInvoices = () => {
   };
 
   const handleDelete = async (id: number) => {
+    if (isAccountant) return;
     if (!window.confirm('Supprimer définitivement cette facture achat ?')) return;
     try {
       await api.delete(`/purchase-invoices/${id}`);
@@ -344,6 +349,7 @@ const PurchaseInvoices = () => {
   };
 
   const handleArchive = async (row: PurchaseInvoiceRow) => {
+    if (isAccountant) return;
     const next = Number(row.archived) === 1 ? 0 : 1;
     try {
       await api.patch(`/purchase-invoices/${row.id}/archive`, { archived: next });
@@ -380,16 +386,22 @@ const PurchaseInvoices = () => {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setModalMode('manual')}
-            className="flex items-center gap-2 rounded-2xl bg-rose-600 px-5 py-2.5 font-bold text-white shadow-lg shadow-rose-100 transition-all hover:bg-rose-700"
+            onClick={() => {
+              if (!isAccountant) setModalMode('manual');
+            }}
+            disabled={isAccountant}
+            className="flex items-center gap-2 rounded-2xl bg-rose-600 px-5 py-2.5 font-bold text-white shadow-lg shadow-rose-100 transition-all hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Plus className="h-5 w-5" />
             Nouvelle facture
           </button>
           <button
             type="button"
-            onClick={() => setModalMode('upload')}
-            className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-5 py-2.5 font-bold text-rose-700 shadow-sm transition-all hover:bg-rose-50"
+            onClick={() => {
+              if (!isAccountant) setModalMode('upload');
+            }}
+            disabled={isAccountant}
+            className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-5 py-2.5 font-bold text-rose-700 shadow-sm transition-all hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Upload className="h-5 w-5" />
             Importer PDF / image

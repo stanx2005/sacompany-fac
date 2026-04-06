@@ -5,7 +5,7 @@ export const users = sqliteTable('users', {
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   password: text('password').notNull(),
-  role: text('role', { enum: ['admin', 'staff'] }).default('staff'),
+  role: text('role', { enum: ['admin', 'staff', 'accountant'] }).default('staff'),
   // Company Info for PDF
   companyName: text('company_name').default('SA COMPANY'),
   companyICE: text('company_ice').default('000000000000000'),

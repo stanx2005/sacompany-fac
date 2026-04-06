@@ -65,6 +65,7 @@ function invoiceCalendarDay(dateStr: string): string {
 const Invoices = () => {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
+  const isAccountant = user?.role === 'accountant';
   const CREATE_CLIENT_OPTION = '__create_client__';
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -137,6 +138,7 @@ const Invoices = () => {
   };
 
   const toggleArchive = async (invoice: Invoice, archived: boolean) => {
+    if (isAccountant) return;
     if (!isAdmin) return;
     if (!window.confirm(archived ? 'Archiver cette facture ?' : 'Restaurer cette facture ?')) return;
     try {
@@ -148,6 +150,7 @@ const Invoices = () => {
   };
 
   const toggleInvoiceCompleted = async (invoice: Invoice, completed: boolean) => {
+    if (isAccountant) return;
     const ok = window.confirm(
       completed
         ? 'Marquer cette facture comme terminée ? Vous pourrez ensuite la supprimer (admin).'
@@ -163,6 +166,7 @@ const Invoices = () => {
   };
 
   const handleDeleteInvoice = async (invoice: Invoice) => {
+    if (isAccountant) return;
     if (!isAdmin) return;
     if (!Number(invoice.completed || 0)) return;
     if (!window.confirm(`Supprimer définitivement la facture ${invoice.invoiceNumber} ?`)) return;
@@ -213,6 +217,7 @@ const Invoices = () => {
   };
 
   const handleConvertToBL = async (id: number) => {
+    if (isAccountant) return;
     if (window.confirm('Convertir cette facture en Bon de Livraison ?')) {
       try {
         await api.post(`/invoices/${id}/convert-bl`);
@@ -224,11 +229,13 @@ const Invoices = () => {
   };
 
   const handleOpenConvertBC = (id: number) => {
+    if (isAccountant) return;
     setSelectedInvoiceId(id);
     setIsConvertModalOpen(true);
   };
 
   const handleConvertToBC = async () => {
+    if (isAccountant) return;
     if (!selectedSupplierId) return alert('Veuillez sélectionner un fournisseur.');
     try {
       await api.post(`/invoices/${selectedInvoiceId}/convert-bc`, { supplierId: selectedSupplierId });
@@ -269,6 +276,7 @@ const Invoices = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       await api.post('/invoices', {
         ...formData,
@@ -295,6 +303,7 @@ const Invoices = () => {
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAccountant) return;
     try {
       setCreatingClient(true);
       await api.post('/clients', newClientData);
@@ -371,8 +380,11 @@ const Invoices = () => {
           <p className="text-slate-500 font-medium mt-1">Suivez vos ventes et facturations clients.</p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold"
+          onClick={() => {
+            if (!isAccountant) setIsModalOpen(true);
+          }}
+          disabled={isAccountant}
+          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus className="w-5 h-5" />
           <span>Nouvelle Facture</span>
