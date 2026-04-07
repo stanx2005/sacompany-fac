@@ -9,6 +9,7 @@ import {
   deleteInvoice,
   convertInvoiceToBL,
   convertInvoiceToBC,
+  updateInvoice,
 } from '../controllers/invoiceController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
@@ -24,6 +25,7 @@ router.patch('/:id/complete', requireRoles(['admin', 'staff']), setInvoiceComple
 router.delete('/:id', requireAdmin, deleteInvoice);
 router.get('/:id/items', getInvoiceItems);
 router.post('/', requireRoles(['admin', 'staff']), createInvoice);
+router.put('/:id', requireRoles(['admin', 'staff']), updateInvoice);
 router.post('/:id/convert-bl', requireRoles(['admin', 'staff']), convertInvoiceToBL);
 router.post('/:id/convert-bc', requireRoles(['admin', 'staff']), convertInvoiceToBC);
 

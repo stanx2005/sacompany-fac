@@ -366,3 +366,69 @@ export const createInvoice = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Erreur.', error });
   }
 };
+
+export const updateInvoice = async (req: Request, res: Response) => {
+  const id = safeId(req.params.id);
+  const invoiceId = parseInt(id || '0', 10);
+  const { clientId, date, items } = req.body;
+  if (!invoiceId) return res.status(400).json({ message: 'ID facture invalide.' });
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: 'Au moins un article est requis.' });
+  }
+  try {
+    const [existing] = await db.select().from(salesInvoices).where(eq(salesInvoices.id, invoiceId));
+    if (!existing) return res.status(404).json({ message: 'Facture non trouvée.' });
+
+    let totalExclTax = 0;
+    let totalTax = 0;
+    const processedItems = items.map((item: any) => {
+      const qty = Number(item.quantity || 0);
+      const price = Number(item.unitPrice || 0);
+      const tax = Number(item.taxRate || 20);
+      const lineExclTax = qty * price;
+      const lineTax = lineExclTax * (tax / 100);
+      totalExclTax += lineExclTax;
+      totalTax += lineTax;
+      return {
+        productId: Number(item.productId || 0),
+        quantity: qty,
+        unitPrice: price,
+        taxRate: tax,
+        totalLine: lineExclTax + lineTax,
+        date: item.date ? String(item.date) : null,
+      };
+    });
+    const totalInclTax = totalExclTax + totalTax;
+
+    await db
+      .update(salesInvoices)
+      .set({
+        clientId: Number(clientId || 0),
+        date: String(date || ''),
+        totalExclTax: Number(totalExclTax),
+        totalTax: Number(totalTax),
+        totalInclTax: Number(totalInclTax),
+      })
+      .where(eq(salesInvoices.id, invoiceId));
+
+    await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+    for (const item of processedItems) {
+      await db.insert(invoiceItems).values({
+        invoiceId,
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(item.totalLine || 0),
+        date: item.date,
+      } as any);
+    }
+
+    const uid = (req as { user?: { id: number } }).user?.id;
+    await logActivity(uid, 'update', 'invoice', invoiceId, { invoiceNumber: existing.invoiceNumber });
+    res.json({ message: 'Facture mise à jour.' });
+  } catch (error) {
+    console.error('updateInvoice:', error);
+    res.status(500).json({ message: 'Erreur mise à jour facture.', error });
+  }
+};

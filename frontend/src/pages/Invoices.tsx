@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Trash2,
   Calendar,
+  Edit2,
 } from 'lucide-react';
 import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
 import { SendDocumentActions } from '../components/SendDocumentActions';
@@ -77,6 +78,7 @@ const Invoices = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -278,7 +280,7 @@ const Invoices = () => {
     e.preventDefault();
     if (isAccountant) return;
     try {
-      await api.post('/invoices', {
+      const payload = {
         ...formData,
         clientId: parseInt(formData.clientId),
         items: formData.items.map(item => ({
@@ -288,11 +290,39 @@ const Invoices = () => {
           unitPrice: parseFloat(item.unitPrice.toString()),
           taxRate: parseFloat(item.taxRate.toString())
         }))
-      });
+      };
+      if (editingInvoice) {
+        await api.put(`/invoices/${editingInvoice.id}`, payload);
+      } else {
+        await api.post('/invoices', payload);
+      }
       setIsModalOpen(false);
+      setEditingInvoice(null);
       fetchData();
     } catch (error) {
       console.error('Erreur:', error);
+    }
+  };
+
+  const openEditInvoice = async (invoice: Invoice) => {
+    if (isAccountant) return;
+    try {
+      const { data } = await api.get(`/invoices/${invoice.id}/items`);
+      const mappedItems = (Array.isArray(data) ? data : []).map((it: any) => ({
+        productId: String(it.productId || ''),
+        quantity: Number(it.quantity || 1),
+        unitPrice: Number(it.unitPrice || 0),
+        taxRate: Number(it.taxRate || 20),
+      }));
+      setFormData({
+        clientId: String(invoice.clientId || ''),
+        date: invoiceCalendarDay(invoice.date) || new Date().toISOString().split('T')[0],
+        items: mappedItems.length ? mappedItems : [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
+      });
+      setEditingInvoice(invoice);
+      setIsModalOpen(true);
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Impossible de charger la facture pour modification.');
     }
   };
 
@@ -381,7 +411,15 @@ const Invoices = () => {
         </div>
         <button 
           onClick={() => {
-            if (!isAccountant) setIsModalOpen(true);
+            if (!isAccountant) {
+              setEditingInvoice(null);
+              setFormData({
+                clientId: '',
+                date: new Date().toISOString().split('T')[0],
+                items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
+              });
+              setIsModalOpen(true);
+            }
           }}
           disabled={isAccountant}
           className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold disabled:cursor-not-allowed disabled:opacity-60"
@@ -529,6 +567,16 @@ const Invoices = () => {
                         <button onClick={() => openTimeline(invoice)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Historique paiements">
                           <History className="w-5 h-5" />
                         </button>
+                        {!isAccountant ? (
+                          <button
+                            type="button"
+                            onClick={() => void openEditInvoice(invoice)}
+                            className="p-2 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-xl transition-all"
+                            title="Modifier facture"
+                          >
+                            <Edit2 className="w-5 h-5" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => toggleInvoiceCompleted(invoice, !Number(invoice.completed || 0))}
@@ -690,9 +738,15 @@ const Invoices = () => {
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-xl font-black text-slate-800 flex items-center space-x-2">
                 <FileText className="w-6 h-6 text-blue-600" />
-                <span>Nouvelle Facture</span>
+                <span>{editingInvoice ? `Modifier ${editingInvoice.invoiceNumber}` : 'Nouvelle Facture'}</span>
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingInvoice(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -757,10 +811,19 @@ const Invoices = () => {
               </div>
 
               <div className="pt-6 flex space-x-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Annuler</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingInvoice(null);
+                  }}
+                  className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
+                >
+                  Annuler
+                </button>
                 <button type="submit" className="flex-1 px-4 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all flex items-center justify-center space-x-2">
                   <Save className="w-4 h-4" />
-                  <span>Générer la Facture</span>
+                  <span>{editingInvoice ? 'Enregistrer les modifications' : 'Générer la Facture'}</span>
                 </button>
               </div>
             </form>

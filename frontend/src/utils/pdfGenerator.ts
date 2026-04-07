@@ -255,30 +255,13 @@ function buildPdfDocument(
     });
 
     const finalY = (doc as any).lastAutoTable.finalY + 10;
+    const footerTopY = 275;
+    const contentBottomLimitY = footerTopY - 8;
 
     if (!isBL) {
       const totalExclTax = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
       const totalTax = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice * (item.taxRate / 100)), 0);
       const totalInclTax = totalExclTax + totalTax;
-
-      doc.setDrawColor(200);
-      doc.setFillColor(250, 250, 250);
-      doc.rect(130, finalY - 5, 65, 30, 'FD');
-
-      doc.setFontSize(10);
-      doc.setTextColor(40);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Total HT:`, 135, finalY + 2);
-      doc.text(`${totalExclTax.toFixed(2)} MAD`, 190, finalY + 2, { align: 'right' });
-
-      doc.text(`TVA:`, 135, finalY + 9);
-      doc.text(`${totalTax.toFixed(2)} MAD`, 190, finalY + 9, { align: 'right' });
-
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(16, 185, 129);
-      doc.text(`Total TTC:`, 135, finalY + 18);
-      doc.text(`${totalInclTax.toFixed(2)} MAD`, 190, finalY + 18, { align: 'right' });
 
       const integerPart = Math.floor(totalInclTax);
       const decimalPart = Math.round((totalInclTax - integerPart) * 100);
@@ -293,16 +276,48 @@ function buildPdfDocument(
       else if (title === "FACTURE ACHAT") phrasePrefix = "Arrêté la présente facture d'achat à la somme de :";
 
       const amountText = `${amountInLetters.toUpperCase()} DIRHAMS${centsInLetters.toUpperCase()}.`;
+      const amountLines = doc.splitTextToSize(amountText, 180) as string[];
+      const amountLineHeight = 4.5;
+      const neededEndY = finalY + 42 + Math.max(0, amountLines.length - 1) * amountLineHeight;
+      let sectionY = finalY;
+      if (neededEndY > contentBottomLimitY) {
+        doc.addPage();
+        sectionY = 20;
+      }
+
+      doc.setDrawColor(200);
+      doc.setFillColor(250, 250, 250);
+      doc.rect(130, sectionY - 5, 65, 30, 'FD');
+
+      doc.setFontSize(10);
+      doc.setTextColor(40);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Total HT:`, 135, sectionY + 2);
+      doc.text(`${totalExclTax.toFixed(2)} MAD`, 190, sectionY + 2, { align: 'right' });
+
+      doc.text(`TVA:`, 135, sectionY + 9);
+      doc.text(`${totalTax.toFixed(2)} MAD`, 190, sectionY + 9, { align: 'right' });
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(16, 185, 129);
+      doc.text(`Total TTC:`, 135, sectionY + 18);
+      doc.text(`${totalInclTax.toFixed(2)} MAD`, 190, sectionY + 18, { align: 'right' });
+
       doc.setFontSize(9);
       doc.setTextColor(40);
       doc.setFont("helvetica", "bold");
-      doc.text(phrasePrefix, margin, finalY + 35);
-      doc.text(amountText, margin, finalY + 42);
+      doc.text(phrasePrefix, margin, sectionY + 35);
+      doc.text(amountLines, margin, sectionY + 42);
     } else {
       doc.setFontSize(10);
       doc.setTextColor(40);
       doc.setFont("helvetica", "bold");
-      const signatureY = finalY + 10;
+      let signatureY = finalY + 10;
+      if (signatureY + 42 > contentBottomLimitY) {
+        doc.addPage();
+        signatureY = 35;
+      }
       doc.text(`Fait à ......................., le ${data.date}`, margin, signatureY);
       doc.text("Cachet et Signature du Client:", margin, signatureY + 7);
       doc.rect(margin, signatureY + 12, 70, 30);
