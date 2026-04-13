@@ -327,7 +327,7 @@ function buildPdfDocument(
         doc.addPage();
         signatureY = 35;
       }
-      doc.text(`Fait à ......................., le ${data.date}`, margin, signatureY);
+      doc.text(`Fait à Kenitra, le ${data.date}`, margin, signatureY);
       doc.text("Cachet et Signature du Client:", margin, signatureY + 7);
       doc.rect(margin, signatureY + 12, 70, 30);
       doc.text("Cachet et Signature:", 195, signatureY + 7, { align: 'right' });

@@ -8,6 +8,7 @@ import {
   setDeliveryNoteArchived,
   setDeliveryNoteCompleted,
   deleteDeliveryNote,
+  updateDeliveryNote,
 } from '../controllers/deliveryNoteController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
@@ -18,6 +19,7 @@ router.use(authenticateToken);
 router.get('/', getDeliveryNotes);
 router.get('/:id/items', getDeliveryNoteItems);
 router.post('/', requireRoles(['admin', 'staff']), createDeliveryNote);
+router.put('/:id', requireRoles(['admin', 'staff']), updateDeliveryNote);
 router.post('/:id/deliver', requireRoles(['admin', 'staff']), markAsDelivered);
 router.post('/:id/convert-invoice', requireRoles(['admin', 'staff']), convertBLToInvoice);
 router.patch('/:id/archive', requireAdmin, setDeliveryNoteArchived);

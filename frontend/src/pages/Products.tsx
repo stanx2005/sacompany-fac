@@ -7,7 +7,8 @@ interface Product {
   id: number;
   name: string;
   description: string | null;
-  price: number;
+  price: number; // vente
+  purchasePrice?: number; // achat
   taxRate: number;
   stock: number;
 }
@@ -37,11 +38,12 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
     name: '',
     description: '',
     price: '',
+    purchasePrice: '',
     taxRate: '20.00',
     stock: '0'
   });
   const [importPreview, setImportPreview] = useState<{
-    valid: Array<{ name: string; description: string; price: number; taxRate: number; stock: number }>;
+    valid: Array<{ name: string; description: string; price: number; purchasePrice: number; taxRate: number; stock: number }>;
     errors: Array<{ row: number; message: string }>;
   } | null>(null);
 
@@ -92,6 +94,7 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
         Designation: v.name,
         Description: v.description,
         PrixHT: v.price,
+        PrixAchatHT: v.purchasePrice,
         TVA: v.taxRate,
         Stock: v.stock,
       }));
@@ -111,12 +114,13 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
         name: product.name,
         description: product.description || '',
         price: product.price.toString(),
+        purchasePrice: String(product.purchasePrice ?? product.price ?? ''),
         taxRate: product.taxRate.toString(),
         stock: product.stock.toString()
       });
     } else {
       setEditingProduct(null);
-      setFormData({ name: '', description: '', price: '', taxRate: '20.00', stock: '0' });
+      setFormData({ name: '', description: '', price: '', purchasePrice: '', taxRate: '20.00', stock: '0' });
     }
     setIsModalOpen(true);
   };
@@ -126,6 +130,7 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
     const data = {
       ...formData,
       price: parseFloat(formData.price),
+      purchasePrice: parseFloat(formData.purchasePrice || formData.price),
       taxRate: parseFloat(formData.taxRate),
       stock: parseInt(formData.stock)
     };
@@ -220,8 +225,9 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
               <tr className="bg-slate-50/50">
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Désignation</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">
-                  {isPurchase ? "Prix d'achat HT" : 'Prix vente HT'}
+                  Prix vente HT
                 </th>
+                <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Prix achat HT</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">TVA</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Stock</th>
                 <th className="px-8 py-5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
@@ -248,6 +254,9 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
                     </td>
                     <td className="px-8 py-6 text-right font-mono font-bold text-slate-900">
                       {product.price.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                    </td>
+                    <td className="px-8 py-6 text-right font-mono font-bold text-amber-700">
+                      {Number(product.purchasePrice ?? product.price).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
                     </td>
                     <td className="px-8 py-6 text-center">
                       <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider">
@@ -302,7 +311,7 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
               )}
               {importPreview.valid.slice(0, 50).map((v, i) => (
                 <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2 text-sm">
-                  <span className="font-bold">{v.name}</span> — {v.price} MAD HT — TVA {v.taxRate}% — Stock {v.stock}
+                  <span className="font-bold">{v.name}</span> — Vente {v.price} MAD HT — Achat {v.purchasePrice} MAD HT — TVA {v.taxRate}% — Stock {v.stock}
                 </div>
               ))}
               {importPreview.valid.length > 50 && (
@@ -354,13 +363,17 @@ const Products = ({ variant = 'sales' }: ProductsProps) => {
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Description</label>
                 <textarea className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} rows={2} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">
-                    {isPurchase ? "Prix d'achat HT" : 'Prix vente HT'}
-                  </label>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Prix vente HT</label>
                   <input type="number" step="0.01" required className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} />
                 </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Prix achat HT</label>
+                  <input type="number" step="0.01" required className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} value={formData.purchasePrice} onChange={(e) => setFormData({...formData, purchasePrice: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">TVA (%)</label>
                   <select className={`w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 focus:ring-2 ${ringFocus} focus:bg-white outline-none transition-all font-bold text-slate-700`} value={formData.taxRate} onChange={(e) => setFormData({...formData, taxRate: e.target.value})}>

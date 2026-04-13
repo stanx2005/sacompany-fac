@@ -205,3 +205,19 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Erreur conversion.', error });
   }
 };
+
+export const deleteQuote = async (req: Request, res: Response) => {
+  const id = safeId(req.params.id);
+  const quoteId = parseInt(id || '0', 10);
+  if (!quoteId) return res.status(400).json({ message: 'ID devis invalide.' });
+  try {
+    const [q] = await db.select().from(quotes).where(eq(quotes.id, quoteId));
+    if (!q) return res.status(404).json({ message: 'Devis non trouvé.' });
+    await db.delete(quoteItems).where(eq(quoteItems.quoteId, quoteId));
+    await db.delete(quotes).where(eq(quotes.id, quoteId));
+    res.json({ message: 'Devis supprimé.' });
+  } catch (error) {
+    console.error('deleteQuote:', error);
+    res.status(500).json({ message: 'Erreur suppression devis.', error });
+  }
+};

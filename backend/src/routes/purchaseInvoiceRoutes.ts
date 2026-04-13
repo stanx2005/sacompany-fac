@@ -10,6 +10,7 @@ import {
   archivePurchaseInvoice,
   deletePurchaseInvoice,
   purchaseInvoiceUploadMiddleware,
+  updatePurchaseInvoice,
 } from '../controllers/purchaseInvoiceController.js';
 
 const router = Router();
@@ -17,6 +18,7 @@ router.use(authenticateToken);
 
 router.get('/', listPurchaseInvoices);
 router.post('/', requireRoles(['admin', 'staff']), createManualPurchaseInvoice);
+router.put('/:id', requireRoles(['admin', 'staff']), updatePurchaseInvoice);
 router.post(
   '/upload',
   requireRoles(['admin', 'staff']),

@@ -12,6 +12,7 @@ import {
   Receipt,
   Archive,
   Trash2,
+  Edit2,
 } from 'lucide-react';
 import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
 import { SendDocumentActions } from '../components/SendDocumentActions';
@@ -45,6 +46,7 @@ const PurchaseOrders = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [convertFaOpen, setConvertFaOpen] = useState(false);
   const [convertFaOrderId, setConvertFaOrderId] = useState<number | null>(null);
   const [convertFaInvoiceNumber, setConvertFaInvoiceNumber] = useState('');
@@ -55,6 +57,14 @@ const PurchaseOrders = () => {
     date: new Date().toISOString().split('T')[0],
     items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
   });
+
+  const resetForm = () => {
+    setFormData({
+      supplierId: '',
+      date: new Date().toISOString().split('T')[0],
+      items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
+    });
+  };
 
   const fetchData = async () => {
     try {
@@ -200,7 +210,7 @@ const PurchaseOrders = () => {
         newItems[index] = { 
           ...newItems[index], 
           productId: value, 
-          unitPrice: product.price,
+          unitPrice: Number(product.purchasePrice ?? product.price ?? 0),
           taxRate: product.taxRate 
         };
       } else {
@@ -216,7 +226,7 @@ const PurchaseOrders = () => {
     e.preventDefault();
     if (isAccountant) return;
     try {
-      await api.post('/purchase-orders', {
+      const payload = {
         ...formData,
         supplierId: parseInt(formData.supplierId),
         items: formData.items.map(item => ({
@@ -226,11 +236,41 @@ const PurchaseOrders = () => {
           unitPrice: parseFloat(item.unitPrice.toString()),
           taxRate: parseFloat(item.taxRate.toString())
         }))
-      });
+      };
+      if (editingOrder) {
+        await api.put(`/purchase-orders/${editingOrder.id}`, payload);
+      } else {
+        await api.post('/purchase-orders', payload);
+      }
+      setEditingOrder(null);
+      resetForm();
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
       console.error('Erreur:', error);
+    }
+  };
+
+  const openEditOrder = async (order: PurchaseOrder) => {
+    if (isAccountant) return;
+    try {
+      const itemsRes = await api.get(`/purchase-orders/${order.id}/items`);
+      const items = (itemsRes.data || []).map((item: any) => ({
+        productId: String(item.productId || ''),
+        quantity: Number(item.quantity || 1),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+      }));
+      setEditingOrder(order);
+      setFormData({
+        supplierId: String(order.supplierId || ''),
+        date: order.date || new Date().toISOString().split('T')[0],
+        items: items.length ? items : [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
+      });
+      setIsModalOpen(true);
+    } catch (error) {
+      console.error('Erreur chargement BC:', error);
+      alert('Impossible de charger ce bon pour modification.');
     }
   };
 
@@ -254,7 +294,11 @@ const PurchaseOrders = () => {
         </div>
         <button 
           onClick={() => {
-            if (!isAccountant) setIsModalOpen(true);
+            if (!isAccountant) {
+              setEditingOrder(null);
+              resetForm();
+              setIsModalOpen(true);
+            }
           }}
           disabled={isAccountant}
           className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold disabled:cursor-not-allowed disabled:opacity-60"
@@ -345,6 +389,14 @@ const PurchaseOrders = () => {
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex flex-wrap items-center justify-end gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => void openEditOrder(order)}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                          title="Modifier"
+                        >
+                          <Edit2 className="w-5 h-5" />
+                        </button>
                         <button type="button" onClick={() => openConvertFa(order.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Convertir en facture achat">
                           <Receipt className="w-5 h-5" />
                         </button>
@@ -484,9 +536,16 @@ const PurchaseOrders = () => {
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-xl font-black text-slate-800 flex items-center space-x-2">
                 <ShoppingCart className="w-6 h-6 text-emerald-600" />
-                <span>Nouveau Bon de Commande</span>
+                <span>{editingOrder ? `Modifier ${editingOrder.orderNumber}` : 'Nouveau Bon de Commande'}</span>
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setEditingOrder(null);
+                  resetForm();
+                  setIsModalOpen(false);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -543,10 +602,20 @@ const PurchaseOrders = () => {
               </div>
 
               <div className="pt-6 flex space-x-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Annuler</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingOrder(null);
+                    resetForm();
+                    setIsModalOpen(false);
+                  }}
+                  className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
+                >
+                  Annuler
+                </button>
                 <button type="submit" className="flex-1 px-4 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all flex items-center justify-center space-x-2">
                   <Save className="w-4 h-4" />
-                  <span>Générer le Bon</span>
+                  <span>{editingOrder ? 'Enregistrer les modifications' : 'Générer le Bon'}</span>
                 </button>
               </div>
             </form>

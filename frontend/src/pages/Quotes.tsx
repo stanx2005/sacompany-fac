@@ -139,6 +139,17 @@ const Quotes = () => {
     }
   };
 
+  const handleDeleteQuote = async (quote: Quote) => {
+    if (isAccountant) return;
+    if (!window.confirm(`Supprimer le devis ${quote.quoteNumber} ?`)) return;
+    try {
+      await api.delete(`/quotes/${quote.id}`);
+      fetchData();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur suppression devis.');
+    }
+  };
+
   const handleAddItem = () => {
     setFormData({
       ...formData,
@@ -337,6 +348,11 @@ const Quotes = () => {
                         <button onClick={() => handleDownloadPDF(quote)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
                           <Download className="w-5 h-5" />
                         </button>
+                        {!isAccountant ? (
+                          <button onClick={() => void handleDeleteQuote(quote)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Supprimer devis">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        ) : null}
                         <SendDocumentActions
                           preparePdf={() => prepareQuotePdf(quote)}
                           recipientType="client"

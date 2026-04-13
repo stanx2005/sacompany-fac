@@ -13,9 +13,18 @@ export const getProducts = async (req: Request, res: Response) => {
 };
 
 export const createProduct = async (req: Request, res: Response) => {
-  const { name, description, price, taxRate, stock } = req.body;
+  const { name, description, price, purchasePrice, taxRate, stock } = req.body;
   try {
-    await db.insert(products).values({ name, description, price, taxRate, stock });
+    const salePrice = Number(price || 0);
+    const buyPriceNum = Number(purchasePrice);
+    await db.insert(products).values({
+      name,
+      description,
+      price: salePrice,
+      purchasePrice: Number.isFinite(buyPriceNum) ? buyPriceNum : salePrice,
+      taxRate,
+      stock,
+    });
     res.status(201).json({ message: 'Produit créé avec succès.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur lors de la création du produit.', error });
@@ -27,6 +36,7 @@ type ValidProductRow = {
   name: string;
   description: string;
   price: number;
+  purchasePrice: number;
   taxRate: number;
   stock: number;
 };
@@ -42,6 +52,7 @@ export const bulkPreviewProducts = async (req: Request, res: Response) => {
     const p = raw as Record<string, unknown>;
     const name = String(p.Designation ?? p.name ?? '').trim();
     const price = parseFloat(String(p.PrixHT ?? p.price ?? '0'));
+    const purchasePrice = parseFloat(String(p.PrixAchatHT ?? p.purchasePrice ?? p.PrixAchat ?? price));
     if (!name) {
       errors.push({ row: i + 1, message: 'Désignation / nom manquant' });
       return;
@@ -54,6 +65,7 @@ export const bulkPreviewProducts = async (req: Request, res: Response) => {
       name,
       description: String(p.Description ?? p.description ?? ''),
       price,
+      purchasePrice: Number.isNaN(purchasePrice) ? price : purchasePrice,
       taxRate: parseFloat(String(p.TVA ?? p.taxRate ?? '20')) || 20,
       stock: parseInt(String(p.Stock ?? p.stock ?? '0'), 10) || 0,
     });
@@ -74,6 +86,7 @@ export const bulkCreateProducts = async (req: Request, res: Response) => {
         name: String(p.Designation || ''),
         description: String(p.Description || ''),
         price: parseFloat(String(p.PrixHT || '0')),
+        purchasePrice: parseFloat(String((p.PrixAchatHT ?? p.PrixAchat ?? p.PrixHT) || '0')),
         taxRate: parseFloat(String(p.TVA || '20')),
         stock: parseInt(String(p.Stock || '0'))
       });
@@ -87,10 +100,19 @@ export const bulkCreateProducts = async (req: Request, res: Response) => {
 export const updateProduct = async (req: Request, res: Response) => {
   const { id: rawId } = req.params;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
-  const { name, description, price, taxRate, stock } = req.body;
+  const { name, description, price, purchasePrice, taxRate, stock } = req.body;
   try {
+    const salePrice = Number(price || 0);
+    const buyPriceNum = Number(purchasePrice);
     await db.update(products)
-      .set({ name, description, price, taxRate, stock })
+      .set({
+        name,
+        description,
+        price: salePrice,
+        purchasePrice: Number.isFinite(buyPriceNum) ? buyPriceNum : salePrice,
+        taxRate,
+        stock,
+      })
       .where(eq(products.id, parseInt(id || '0')));
     res.json({ message: 'Produit mis à jour avec succès.' });
   } catch (error) {

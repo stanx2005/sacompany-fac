@@ -168,6 +168,16 @@ export async function ensureAuxiliarySchema(): Promise<void> {
     /* duplicate column */
   }
   try {
+    await client.execute(`ALTER TABLE products ADD COLUMN purchase_price real DEFAULT 0`);
+  } catch {
+    /* duplicate column */
+  }
+  try {
+    await client.execute(`UPDATE products SET purchase_price = COALESCE(purchase_price, price, 0)`);
+  } catch {
+    /* ignore */
+  }
+  try {
     await client.execute(`
       CREATE TABLE IF NOT EXISTS purchase_invoice_items (
         id integer PRIMARY KEY AUTOINCREMENT NOT NULL,

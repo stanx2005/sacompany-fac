@@ -247,6 +247,92 @@ export const createManualPurchaseInvoice = async (req: Request, res: Response) =
   }
 };
 
+export const updatePurchaseInvoice = async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id ?? ''), 10);
+  if (Number.isNaN(id)) return res.status(400).json({ message: 'ID invalide.' });
+  try {
+    const [existing] = await db.select().from(purchaseInvoices).where(eq(purchaseInvoices.id, id));
+    if (!existing) return res.status(404).json({ message: 'Facture introuvable.' });
+
+    const body = req.body as Record<string, any>;
+    const { supplierId, invoiceNumber, date, notes, items } = body;
+
+    const num = String(invoiceNumber || '').trim();
+    if (!num) return res.status(400).json({ message: 'Numéro de facture requis.' });
+    const d = String(date || '').trim();
+    if (!d) return res.status(400).json({ message: 'Date requise.' });
+
+    const sid =
+      supplierId === '' || supplierId === undefined || supplierId === null
+        ? null
+        : parseInt(String(supplierId), 10);
+    if (sid !== null && Number.isNaN(sid)) {
+      return res.status(400).json({ message: 'Fournisseur invalide.' });
+    }
+
+    let totalExclTax: number;
+    let totalTax: number;
+    let totalInclTax: number;
+    let rowsToInsert: ReturnType<typeof processLineItems>['processed'] | null = null;
+
+    if (Array.isArray(items) && items.length > 0) {
+      for (const it of items) {
+        if (!it.productId || Number(it.quantity) < 1) {
+          return res.status(400).json({ message: 'Chaque ligne doit avoir un produit et une quantité.' });
+        }
+      }
+      const { processed, totalExclTax: ex, totalTax: tx, totalInclTax: inc } = processLineItems(items);
+      totalExclTax = ex;
+      totalTax = tx;
+      totalInclTax = inc;
+      rowsToInsert = processed;
+    } else {
+      const ttc = parseFloat(String(body.totalInclTax));
+      if (Number.isNaN(ttc) || ttc < 0) {
+        return res.status(400).json({ message: 'Montant TTC invalide ou ajoutez des lignes produits.' });
+      }
+      const rate = parseFloat(String(body.taxRate ?? '20'));
+      const tr = Number.isNaN(rate) || rate < 0 ? 20 : rate;
+      const calc = ttcToHtTax(ttc, tr);
+      totalExclTax = calc.ht;
+      totalTax = calc.tax;
+      totalInclTax = ttc;
+    }
+
+    await db
+      .update(purchaseInvoices)
+      .set({
+        supplierId: sid,
+        invoiceNumber: num,
+        date: d,
+        totalExclTax,
+        totalTax,
+        totalInclTax,
+        notes: notes ? String(notes) : null,
+      })
+      .where(eq(purchaseInvoices.id, id));
+
+    await db.delete(purchaseInvoiceItems).where(eq(purchaseInvoiceItems.purchaseInvoiceId, id));
+    if (rowsToInsert) {
+      for (const it of rowsToInsert) {
+        await db.insert(purchaseInvoiceItems).values({
+          purchaseInvoiceId: id,
+          productId: it.productId,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          taxRate: it.taxRate,
+          totalLine: it.totalLine,
+        } as any);
+      }
+    }
+
+    res.json({ message: 'Facture achat mise à jour.' });
+  } catch (error) {
+    console.error('updatePurchaseInvoice:', error);
+    res.status(500).json({ message: 'Erreur mise à jour facture achat.', error });
+  }
+};
+
 export const createUploadedPurchaseInvoice = async (req: Request, res: Response) => {
   try {
     const file = req.file;

@@ -43,7 +43,10 @@ export const products = sqliteTable('products', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   description: text('description'),
+  /** Prix de vente HT. */
   price: real('price').notNull(),
+  /** Prix d'achat HT (fournisseur). */
+  purchasePrice: real('purchase_price').notNull().default(0),
   taxRate: real('tax_rate').default(20.00), // TVA 20% par défaut
   stock: integer('stock').default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(new Date()),

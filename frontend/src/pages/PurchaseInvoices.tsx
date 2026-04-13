@@ -15,6 +15,7 @@ import {
   Save,
   Archive,
   ShoppingCart,
+  Edit2,
 } from 'lucide-react';
 
 interface PurchaseInvoiceRow {
@@ -47,7 +48,7 @@ const PurchaseInvoices = () => {
   const [suppliers, setSuppliers] = useState<
     { id: number; name: string; taxNumber?: string; address?: string; phone?: string }[]
   >([]);
-  const [products, setProducts] = useState<{ id: number; name: string; price: number; taxRate: number }[]>([]);
+  const [products, setProducts] = useState<{ id: number; name: string; price: number; purchasePrice?: number; taxRate: number }[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<{ id: number; orderNumber: string; supplierName: string }[]>(
     []
   );
@@ -55,6 +56,7 @@ const PurchaseInvoices = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
   const [modalMode, setModalMode] = useState<'manual' | 'upload' | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<PurchaseInvoiceRow | null>(null);
 
   const [manualForm, setManualForm] = useState({
     supplierId: '',
@@ -128,6 +130,7 @@ const PurchaseInvoices = () => {
 
   const closeModal = () => {
     setModalMode(null);
+    setEditingInvoice(null);
     setManualForm({
       supplierId: '',
       invoiceNumber: '',
@@ -156,7 +159,7 @@ const PurchaseInvoices = () => {
       next[index] = {
         ...next[index]!,
         productId: String(value),
-        unitPrice: p ? p.price : next[index]!.unitPrice,
+        unitPrice: p ? Number(p.purchasePrice ?? p.price ?? 0) : next[index]!.unitPrice,
         taxRate: p ? p.taxRate : next[index]!.taxRate,
       };
     } else {
@@ -171,7 +174,7 @@ const PurchaseInvoices = () => {
     try {
       const validItems = manualForm.items.filter((i) => i.productId && Number(i.quantity) >= 1);
       if (validItems.length > 0) {
-        await api.post('/purchase-invoices', {
+        const payload = {
           supplierId: manualForm.supplierId || null,
           invoiceNumber: manualForm.invoiceNumber.trim(),
           date: manualForm.date,
@@ -182,21 +185,31 @@ const PurchaseInvoices = () => {
             unitPrice: Number(i.unitPrice),
             taxRate: Number(i.taxRate ?? 20),
           })),
-        });
+        };
+        if (editingInvoice) {
+          await api.put(`/purchase-invoices/${editingInvoice.id}`, payload);
+        } else {
+          await api.post('/purchase-invoices', payload);
+        }
       } else {
         const ttc = parseFloat(manualForm.totalInclTax);
         if (Number.isNaN(ttc) || ttc < 0) {
           alert('Ajoutez des lignes produits ou un montant TTC.');
           return;
         }
-        await api.post('/purchase-invoices', {
+        const payload = {
           supplierId: manualForm.supplierId || null,
           invoiceNumber: manualForm.invoiceNumber.trim(),
           date: manualForm.date,
           totalInclTax: ttc,
           taxRate: parseFloat(manualForm.taxRate || '20'),
           notes: manualForm.notes || undefined,
-        });
+        };
+        if (editingInvoice) {
+          await api.put(`/purchase-invoices/${editingInvoice.id}`, payload);
+        } else {
+          await api.post('/purchase-invoices', payload);
+        }
       }
       closeModal();
       fetchData();
@@ -359,6 +372,32 @@ const PurchaseInvoices = () => {
     }
   };
 
+  const openEditInvoice = async (row: PurchaseInvoiceRow) => {
+    if (isAccountant) return;
+    try {
+      const itemsRes = await api.get(`/purchase-invoices/${row.id}/items`);
+      const items = (itemsRes.data || []).map((item: any) => ({
+        productId: String(item.productId || ''),
+        quantity: Number(item.quantity || 1),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+      }));
+      setEditingInvoice(row);
+      setManualForm({
+        supplierId: row.supplierId ? String(row.supplierId) : '',
+        invoiceNumber: row.invoiceNumber || '',
+        date: row.date || new Date().toISOString().split('T')[0],
+        totalInclTax: row.totalInclTax != null ? String(row.totalInclTax) : '',
+        taxRate: '20',
+        notes: row.notes || '',
+        items: items.length ? items : [emptyLine()],
+      });
+      setModalMode('manual');
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Impossible de charger la facture.');
+    }
+  };
+
   const sourceLabel = (t: string) => {
     if (t === 'upload') return 'Fichier';
     if (t === 'from_order') return 'Depuis BC';
@@ -387,7 +426,10 @@ const PurchaseInvoices = () => {
           <button
             type="button"
             onClick={() => {
-              if (!isAccountant) setModalMode('manual');
+              if (!isAccountant) {
+                setEditingInvoice(null);
+                setModalMode('manual');
+              }
             }}
             disabled={isAccountant}
             className="flex items-center gap-2 rounded-2xl bg-rose-600 px-5 py-2.5 font-bold text-white shadow-lg shadow-rose-100 transition-all hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -531,6 +573,14 @@ const PurchaseInvoices = () => {
                         )}
                         <button
                           type="button"
+                          title="Modifier"
+                          onClick={() => void openEditInvoice(r)}
+                          className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                        >
+                          <Edit2 className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
                           title={
                             r.filePath ? 'Télécharger le fichier' : 'Télécharger le PDF (généré)'
                           }
@@ -574,7 +624,11 @@ const PurchaseInvoices = () => {
           >
             <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 p-6">
               <h2 className="text-xl font-black text-slate-800">
-                {modalMode === 'manual' ? 'Nouvelle facture (saisie)' : 'Importer PDF ou image'}
+                {modalMode === 'manual'
+                  ? editingInvoice
+                    ? `Modifier ${editingInvoice.invoiceNumber}`
+                    : 'Nouvelle facture (saisie)'
+                  : 'Importer PDF ou image'}
               </h2>
               <button type="button" onClick={closeModal} className="text-slate-400 hover:text-slate-600">
                 <X className="h-6 w-6" />
@@ -787,7 +841,7 @@ const PurchaseInvoices = () => {
                     className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-rose-600 py-3 font-bold text-white shadow-lg shadow-rose-100 hover:bg-rose-700"
                   >
                     <Save className="h-4 w-4" />
-                    Enregistrer
+                    {editingInvoice ? 'Enregistrer les modifications' : 'Enregistrer'}
                   </button>
                 </div>
               </form>

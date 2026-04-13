@@ -179,6 +179,62 @@ export const createDeliveryNote = async (req: Request, res: Response) => {
   }
 };
 
+export const updateDeliveryNote = async (req: Request, res: Response) => {
+  const id = safeId(req.params.id);
+  const noteId = parseInt(id || '0', 10);
+  const { clientId, date, items } = req.body;
+  if (!noteId) return res.status(400).json({ message: 'ID invalide.' });
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: 'Au moins un article est requis.' });
+  }
+  try {
+    const [existing] = await db.select().from(deliveryNotes).where(eq(deliveryNotes.id, noteId));
+    if (!existing) return res.status(404).json({ message: 'Bon de livraison non trouvé.' });
+
+    let totalInclTax = 0;
+    const processedItems = items.map((item: any) => {
+      const lineTotal =
+        Number(item.quantity || 0) * Number(item.unitPrice || 0) * (1 + Number(item.taxRate || 20) / 100);
+      totalInclTax += lineTotal;
+      return {
+        productId: Number(item.productId || 0),
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+        totalLine: Number(lineTotal || 0),
+      };
+    });
+
+    await db
+      .update(deliveryNotes)
+      .set({
+        clientId: Number(clientId || 0),
+        date: String(date || ''),
+        totalInclTax: Number(totalInclTax),
+      })
+      .where(eq(deliveryNotes.id, noteId));
+
+    await db.delete(deliveryNoteItems).where(eq(deliveryNoteItems.deliveryNoteId, noteId));
+    for (const item of processedItems) {
+      await db.insert(deliveryNoteItems).values({
+        deliveryNoteId: noteId,
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        taxRate: item.taxRate,
+        totalLine: item.totalLine,
+      } as any);
+    }
+
+    const uid = (req as { user?: { id: number } }).user?.id;
+    await logActivity(uid, 'update', 'delivery_note', noteId, {});
+    res.json({ message: 'Bon de livraison mis à jour.' });
+  } catch (error) {
+    console.error('updateDeliveryNote:', error);
+    res.status(500).json({ message: 'Erreur mise à jour.', error });
+  }
+};
+
 export const setDeliveryNoteArchived = async (req: Request, res: Response) => {
   const id = safeId(req.params.id);
   const noteId = parseInt(id || '0', 10);

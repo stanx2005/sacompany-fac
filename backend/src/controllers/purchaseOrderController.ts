@@ -162,6 +162,61 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   }
 };
 
+export const updatePurchaseOrder = async (req: Request, res: Response) => {
+  const id = parseInt(safeId(req.params.id), 10);
+  const { supplierId, date, items } = req.body;
+  if (Number.isNaN(id)) return res.status(400).json({ message: 'ID invalide.' });
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: 'Au moins un article est requis.' });
+  }
+  try {
+    const [row] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    if (!row) return res.status(404).json({ message: 'Bon de commande non trouvé.' });
+
+    let totalInclTax = 0;
+    const processedItems = items.map((item: any) => {
+      const price = Number(item.unitPrice || 0);
+      const taxRate = Number(item.taxRate || 20);
+      const qty = Number(item.quantity || 0);
+      const lineTotal = qty * price * (1 + taxRate / 100);
+      totalInclTax += lineTotal;
+      return {
+        productId: Number(item.productId || 0),
+        quantity: qty,
+        unitPrice: price,
+        taxRate,
+        totalLine: Number(lineTotal || 0),
+      };
+    });
+
+    await db
+      .update(purchaseOrders)
+      .set({
+        supplierId: Number(supplierId || 0),
+        date: String(date || ''),
+        totalInclTax: Number(totalInclTax),
+      })
+      .where(eq(purchaseOrders.id, id));
+
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, id));
+    for (const item of processedItems) {
+      await db.insert(purchaseOrderItems).values({
+        purchaseOrderId: id,
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        taxRate: item.taxRate,
+        totalLine: item.totalLine,
+      } as any);
+    }
+
+    res.json({ message: 'Bon de commande mis à jour.' });
+  } catch (error) {
+    console.error('updatePurchaseOrder:', error);
+    res.status(500).json({ message: 'Erreur mise à jour BC.', error });
+  }
+};
+
 export const archivePurchaseOrder = async (req: Request, res: Response) => {
   const id = parseInt(safeId(req.params.id), 10);
   if (Number.isNaN(id)) return res.status(400).json({ message: 'ID invalide.' });

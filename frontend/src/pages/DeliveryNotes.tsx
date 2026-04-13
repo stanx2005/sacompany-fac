@@ -12,6 +12,7 @@ import {
   Save,
   Archive,
   Trash2,
+  Edit2,
 } from 'lucide-react';
 import { generatePDF, generatePDFAsBase64 } from '../utils/pdfGenerator';
 import { SendDocumentActions } from '../components/SendDocumentActions';
@@ -45,6 +46,7 @@ const DeliveryNotes = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [includeArchived, setIncludeArchived] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<DeliveryNote | null>(null);
   
   const [formData, setFormData] = useState({
     clientId: '',
@@ -60,6 +62,14 @@ const DeliveryNotes = () => {
     address: '',
     taxNumber: '',
   });
+
+  const resetForm = () => {
+    setFormData({
+      clientId: '',
+      date: new Date().toISOString().split('T')[0],
+      items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
+    });
+  };
 
   const fetchData = async () => {
     try {
@@ -219,7 +229,7 @@ const DeliveryNotes = () => {
     e.preventDefault();
     if (isAccountant) return;
     try {
-      await api.post('/delivery-notes', {
+      const payload = {
         ...formData,
         clientId: parseInt(formData.clientId),
         items: formData.items.map(item => ({
@@ -229,11 +239,41 @@ const DeliveryNotes = () => {
           unitPrice: parseFloat(item.unitPrice.toString()),
           taxRate: parseFloat(item.taxRate.toString())
         }))
-      });
+      };
+      if (editingNote) {
+        await api.put(`/delivery-notes/${editingNote.id}`, payload);
+      } else {
+        await api.post('/delivery-notes', payload);
+      }
+      setEditingNote(null);
+      resetForm();
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
       console.error('Erreur:', error);
+    }
+  };
+
+  const openEditNote = async (note: DeliveryNote) => {
+    if (isAccountant) return;
+    try {
+      const itemsRes = await api.get(`/delivery-notes/${note.id}/items`);
+      const items = (itemsRes.data || []).map((item: any) => ({
+        productId: String(item.productId || ''),
+        quantity: Number(item.quantity || 1),
+        unitPrice: Number(item.unitPrice || 0),
+        taxRate: Number(item.taxRate || 20),
+      }));
+      setEditingNote(note);
+      setFormData({
+        clientId: String(note.clientId || ''),
+        date: note.date || new Date().toISOString().split('T')[0],
+        items: items.length ? items : [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
+      });
+      setIsModalOpen(true);
+    } catch (error) {
+      console.error('Erreur chargement BL:', error);
+      alert('Impossible de charger ce bon pour modification.');
     }
   };
 
@@ -283,7 +323,11 @@ const DeliveryNotes = () => {
         </div>
         <button 
           onClick={() => {
-            if (!isAccountant) setIsModalOpen(true);
+            if (!isAccountant) {
+              setEditingNote(null);
+              resetForm();
+              setIsModalOpen(true);
+            }
           }}
           disabled={isAccountant}
           className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold disabled:cursor-not-allowed disabled:opacity-60"
@@ -441,6 +485,15 @@ const DeliveryNotes = () => {
                         )}
                         {!Number(note.archived) && note.status !== 'invoiced' && (
                           <button
+                            onClick={() => void openEditNote(note)}
+                            className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                            title="Modifier"
+                          >
+                            <Edit2 className="w-5 h-5" />
+                          </button>
+                        )}
+                        {!Number(note.archived) && note.status !== 'invoiced' && (
+                          <button
                             onClick={() => handleConvertToInvoice(note.id)}
                             className="p-2.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all"
                             title="Convertir en facture"
@@ -478,9 +531,16 @@ const DeliveryNotes = () => {
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-xl font-black text-slate-800 flex items-center space-x-2">
                 <Truck className="w-6 h-6 text-blue-600" />
-                <span>Nouveau Bon de Livraison</span>
+                <span>{editingNote ? `Modifier ${editingNote.noteNumber}` : 'Nouveau Bon de Livraison'}</span>
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setEditingNote(null);
+                  resetForm();
+                  setIsModalOpen(false);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -545,10 +605,20 @@ const DeliveryNotes = () => {
               </div>
 
               <div className="pt-6 flex space-x-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Annuler</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingNote(null);
+                    resetForm();
+                    setIsModalOpen(false);
+                  }}
+                  className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
+                >
+                  Annuler
+                </button>
                 <button type="submit" className="flex-1 px-4 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all flex items-center justify-center space-x-2">
                   <Save className="w-4 h-4" />
-                  <span>Générer le Bon</span>
+                  <span>{editingNote ? 'Enregistrer les modifications' : 'Générer le Bon'}</span>
                 </button>
               </div>
             </form>
