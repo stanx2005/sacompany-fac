@@ -184,7 +184,7 @@ export const convertQuoteToInvoice = async (req: Request, res: Response) => {
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
     const cfg = await getMainConfig();
-    await assignSequentialInvoiceNumberToRow(invoiceResult.id, cfg.numbering.invoiceDevis);
+    await assignSequentialInvoiceNumberToRow(invoiceResult.id, cfg.numbering.invoice);
 
     for (const item of items) {
       await db.insert(invoiceItems).values({
@@ -219,5 +219,24 @@ export const deleteQuote = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('deleteQuote:', error);
     res.status(500).json({ message: 'Erreur suppression devis.', error });
+  }
+};
+
+export const setQuoteStatus = async (req: Request, res: Response) => {
+  const id = safeId(req.params.id);
+  const quoteId = parseInt(id || '0', 10);
+  const nextStatus = String(req.body?.status || '').trim();
+  if (!quoteId) return res.status(400).json({ message: 'ID devis invalide.' });
+  if (!['pending', 'accepted', 'invoiced'].includes(nextStatus)) {
+    return res.status(400).json({ message: 'Statut devis invalide.' });
+  }
+  try {
+    const [q] = await db.select().from(quotes).where(eq(quotes.id, quoteId));
+    if (!q) return res.status(404).json({ message: 'Devis non trouvé.' });
+    await db.update(quotes).set({ status: nextStatus as any }).where(eq(quotes.id, quoteId));
+    res.json({ message: 'Statut du devis mis à jour.' });
+  } catch (error) {
+    console.error('setQuoteStatus:', error);
+    res.status(500).json({ message: 'Erreur mise à jour statut.', error });
   }
 };

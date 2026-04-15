@@ -150,6 +150,17 @@ const Quotes = () => {
     }
   };
 
+  const handleReopenQuote = async (quote: Quote) => {
+    if (isAccountant) return;
+    if (!window.confirm(`Remettre le devis ${quote.quoteNumber} en attente ?`)) return;
+    try {
+      await api.patch(`/quotes/${quote.id}/status`, { status: 'pending' });
+      fetchData();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Erreur mise à jour statut.');
+    }
+  };
+
   const handleAddItem = () => {
     setFormData({
       ...formData,
@@ -344,6 +355,15 @@ const Quotes = () => {
                               <RefreshCw className="w-5 h-5" />
                             </button>
                           </>
+                        )}
+                        {!isAccountant && quote.status === 'invoiced' && (
+                          <button
+                            onClick={() => void handleReopenQuote(quote)}
+                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all"
+                            title="Remettre en attente"
+                          >
+                            <History className="w-5 h-5" />
+                          </button>
                         )}
                         <button onClick={() => handleDownloadPDF(quote)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
                           <Download className="w-5 h-5" />

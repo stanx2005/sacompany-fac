@@ -279,10 +279,11 @@ function buildPdfDocument(
 
       const amountText = `${amountInLetters.toUpperCase()} DIRHAMS${centsInLetters.toUpperCase()}.`;
       const amountLines = doc.splitTextToSize(amountText, isCompact ? 175 : 180) as string[];
-      const amountLineHeight = isCompact ? 4.1 : 4.5;
-      const phraseY = isCompact ? finalY + 30 : finalY + 35;
-      const amountY = isCompact ? finalY + 36 : finalY + 42;
-      const neededEndY = amountY + Math.max(0, amountLines.length - 1) * amountLineHeight;
+      const amountLineHeight = isCompact ? 4 : 4.4;
+      const boxHeight = isCompact ? 22 : 26;
+      const phraseOffset = boxHeight + (isCompact ? 4 : 5);
+      const amountOffset = phraseOffset + (isCompact ? 5 : 6);
+      const neededEndY = finalY + amountOffset + Math.max(0, amountLines.length - 1) * amountLineHeight;
       // Retry once in compact mode to keep totals + amount on same page as table.
       if (neededEndY > contentBottomLimitY && !isCompact) {
         return buildPdfDocument(title, data, items, entity, companyInfo, 'compact');
@@ -295,29 +296,28 @@ function buildPdfDocument(
 
       doc.setDrawColor(200);
       doc.setFillColor(250, 250, 250);
-      const boxHeight = isCompact ? 26 : 30;
       doc.rect(130, sectionY - 5, 65, boxHeight, 'FD');
 
       doc.setFontSize(isCompact ? 9 : 10);
       doc.setTextColor(40);
       doc.setFont("helvetica", "normal");
-      doc.text(`Total HT:`, 135, sectionY + 2);
-      doc.text(`${totalExclTax.toFixed(2)} MAD`, 190, sectionY + 2, { align: 'right' });
+      doc.text(`Total HT:`, 135, sectionY + (isCompact ? 1 : 2));
+      doc.text(`${totalExclTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 1 : 2), { align: 'right' });
 
-      doc.text(`TVA:`, 135, sectionY + (isCompact ? 8 : 9));
-      doc.text(`${totalTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 8 : 9), { align: 'right' });
+      doc.text(`TVA:`, 135, sectionY + (isCompact ? 7 : 8));
+      doc.text(`${totalTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 7 : 8), { align: 'right' });
 
       doc.setFontSize(isCompact ? 10 : 11);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(16, 185, 129);
-      doc.text(`Total TTC:`, 135, sectionY + (isCompact ? 15 : 18));
-      doc.text(`${totalInclTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 15 : 18), { align: 'right' });
+      doc.text(`Total TTC:`, 135, sectionY + (isCompact ? 13 : 15));
+      doc.text(`${totalInclTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 13 : 15), { align: 'right' });
 
       doc.setFontSize(isCompact ? 8 : 9);
       doc.setTextColor(40);
       doc.setFont("helvetica", "bold");
-      doc.text(phrasePrefix, margin, sectionY + (isCompact ? 30 : 35));
-      doc.text(amountLines, margin, sectionY + (isCompact ? 36 : 42));
+      doc.text(phrasePrefix, margin, sectionY + phraseOffset);
+      doc.text(amountLines, margin, sectionY + amountOffset);
     } else {
       doc.setFontSize(10);
       doc.setTextColor(40);
