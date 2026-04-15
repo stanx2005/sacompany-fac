@@ -121,6 +121,60 @@ function addLogoImage(doc: jsPDF, logoDataUrl: string, margin: number): boolean 
   return false;
 }
 
+function drawPdfHeader(doc: jsPDF, title: string, data: any, entity: any, companyInfo: any, margin: number): void {
+  const logoDataUrl = (companyInfo as { logoDataUrl?: string }).logoDataUrl || '';
+  const logoTextSetting = String((companyInfo as { logoText?: string }).logoText ?? '').trim();
+  const cName = isPlaceholderCompanyName(companyInfo.companyName)
+    ? ''
+    : String(companyInfo.companyName ?? '').trim();
+
+  const logoMode = inferPdfLogoMode(companyInfo as { logoMode?: string; logoDataUrl?: string });
+  if (logoMode === 'text') {
+    const headerText = logoTextSetting || cName;
+    addLogoTextBlock(doc, headerText, margin);
+  } else {
+    const logoOk = addLogoImage(doc, logoDataUrl, margin);
+    if (!logoOk && cName) {
+      doc.setFontSize(24);
+      doc.setTextColor(30, 58, 138);
+      doc.setFont('helvetica', 'bold');
+      doc.text(cName, margin, 20);
+    }
+  }
+
+  doc.setFontSize(18);
+  doc.setTextColor(16, 185, 129);
+  doc.setFont('helvetica', 'bold');
+  doc.text(title, 195, 20, { align: 'right' });
+
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Date: ${data.date}`, 195, 30, { align: 'right' });
+  doc.text(`Numéro: ${data.invoiceNumber || data.noteNumber || data.orderNumber || data.quoteNumber}`, 195, 35, {
+    align: 'right',
+  });
+
+  doc.setDrawColor(230);
+  doc.line(margin, 40, 195, 40);
+
+  doc.setFontSize(11);
+  doc.setTextColor(40);
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    title === 'BON DE COMMANDE' || title === 'FACTURE ACHAT' ? 'FOURNISSEUR:' : 'CLIENT:',
+    margin,
+    50
+  );
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${entity.name}`, margin, 57);
+  if (entity.taxNumber) doc.text(`ICE: ${entity.taxNumber}`, margin, 63);
+  if (entity.address) doc.text(`Adresse: ${entity.address}`, margin, 69);
+  if (entity.phone) doc.text(`Tél: ${entity.phone}`, margin, 75);
+}
+
 function buildFooterInfoLine(companyInfo: any): string {
   const parts: string[] = [];
   const ice = String(companyInfo?.companyICE ?? '').trim();
@@ -136,6 +190,90 @@ function buildFooterInfoLine(companyInfo: any): string {
   return parts.join(' | ');
 }
 
+function drawPdfFooter(doc: jsPDF, companyInfo: any, margin: number): void {
+  const footerLegalExtra = (companyInfo as { footerLegal?: string }).footerLegal || '';
+  const cName = isPlaceholderCompanyName(companyInfo.companyName)
+    ? ''
+    : String(companyInfo.companyName ?? '').trim();
+
+  doc.setDrawColor(230);
+  doc.line(margin, 275, 195, 275);
+  doc.setFontSize(8);
+  doc.setTextColor(100);
+  let footerY = 280;
+  if (cName) {
+    doc.setFont('helvetica', 'bold');
+    doc.text(cName, 105, footerY, { align: 'center' });
+    footerY += 5;
+  }
+  doc.setFont('helvetica', 'normal');
+  const footerInfo = buildFooterInfoLine(companyInfo);
+  if (footerInfo) {
+    doc.text(footerInfo, 105, footerY, { align: 'center', maxWidth: 180 });
+    footerY += 5;
+  }
+  if (footerLegalExtra) {
+    doc.setFontSize(7);
+    doc.setTextColor(80);
+    doc.text(footerLegalExtra, 105, footerY + 2, { align: 'center', maxWidth: 180 });
+  }
+}
+
+type PdfLayoutStyle = {
+  tableHeadFontSize: number;
+  tableBodyFontSize: number;
+  tableCellPadding: number;
+  totalsLabelFontSize: number;
+  totalsValueFontSize: number;
+  amountFontSize: number;
+  amountLineHeight: number;
+  totalsBoxHeight: number;
+  totalsY1: number;
+  totalsY2: number;
+  totalsY3: number;
+  phraseGap: number;
+  amountGap: number;
+  signatureFontSize: number;
+};
+
+// Base style aligned with Devis rendering and reused by all PDF documents.
+function getPdfLayoutStyle(layoutMode: 'normal' | 'compact'): PdfLayoutStyle {
+  if (layoutMode === 'compact') {
+    return {
+      tableHeadFontSize: 9,
+      tableBodyFontSize: 8,
+      tableCellPadding: 2,
+      totalsLabelFontSize: 9,
+      totalsValueFontSize: 10,
+      amountFontSize: 8,
+      amountLineHeight: 4,
+      totalsBoxHeight: 22,
+      totalsY1: 1,
+      totalsY2: 7,
+      totalsY3: 13,
+      phraseGap: 4,
+      amountGap: 5,
+      signatureFontSize: 10,
+    };
+  }
+  return {
+    tableHeadFontSize: 10,
+    tableBodyFontSize: 9,
+    tableCellPadding: 3,
+    totalsLabelFontSize: 10,
+    totalsValueFontSize: 11,
+    amountFontSize: 9,
+    amountLineHeight: 4.4,
+    totalsBoxHeight: 26,
+    totalsY1: 2,
+    totalsY2: 8,
+    totalsY3: 15,
+    phraseGap: 5,
+    amountGap: 6,
+    signatureFontSize: 10,
+  };
+}
+
 function buildPdfDocument(
   title: string,
   data: any,
@@ -145,63 +283,10 @@ function buildPdfDocument(
   layoutMode: 'normal' | 'compact' = 'normal'
 ): { doc: jsPDF; filename: string } {
   const doc = new jsPDF();
-    const margin = 15;
-    const isBL = title === "BON DE LIVRAISON";
-    const isCompact = layoutMode === 'compact';
-
-    const footerLegalExtra = (companyInfo as { footerLegal?: string }).footerLegal || "";
-    const logoDataUrl = (companyInfo as { logoDataUrl?: string }).logoDataUrl || "";
-    const logoTextSetting = String((companyInfo as { logoText?: string }).logoText ?? '').trim();
-    const cName = isPlaceholderCompanyName(companyInfo.companyName)
-      ? ''
-      : String(companyInfo.companyName ?? '').trim();
-
-    const logoMode = inferPdfLogoMode(companyInfo as { logoMode?: string; logoDataUrl?: string });
-    if (logoMode === 'text') {
-      const headerText = logoTextSetting || cName;
-      addLogoTextBlock(doc, headerText, margin);
-    } else {
-      const logoOk = addLogoImage(doc, logoDataUrl, margin);
-      if (!logoOk && cName) {
-        doc.setFontSize(24);
-        doc.setTextColor(30, 58, 138);
-        doc.setFont("helvetica", "bold");
-        doc.text(cName, margin, 20);
-      }
-    }
-
-    // Document Title
-    doc.setFontSize(18);
-    doc.setTextColor(16, 185, 129); // Emerald-500 (Green)
-    doc.setFont("helvetica", "bold");
-    doc.text(title, 195, 20, { align: 'right' });
-
-    // Document Info (Right aligned)
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Date: ${data.date}`, 195, 30, { align: 'right' });
-    doc.text(`Numéro: ${data.invoiceNumber || data.noteNumber || data.orderNumber || data.quoteNumber}`, 195, 35, { align: 'right' });
-
-    // Entity Info (Client or Supplier)
-    doc.setDrawColor(230);
-    doc.line(margin, 40, 195, 40); // Divider line
-
-    doc.setFontSize(11);
-    doc.setTextColor(40);
-    doc.setFont("helvetica", "bold");
-    doc.text(
-      title === "BON DE COMMANDE" || title === "FACTURE ACHAT" ? "FOURNISSEUR:" : "CLIENT:",
-      margin,
-      50
-    );
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${entity.name}`, margin, 57);
-    if (entity.taxNumber) doc.text(`ICE: ${entity.taxNumber}`, margin, 63);
-    if (entity.address) doc.text(`Adresse: ${entity.address}`, margin, 69);
-    if (entity.phone) doc.text(`Tél: ${entity.phone}`, margin, 75);
+  const margin = 15;
+  const isBL = title === 'BON DE LIVRAISON';
+  const isCompact = layoutMode === 'compact';
+  const style = getPdfLayoutStyle(layoutMode);
 
     // Table
     let tableColumn, tableRows;
@@ -236,10 +321,11 @@ function buildPdfDocument(
       head: [tableColumn],
       body: tableRows,
       theme: 'grid',
+      margin: { top: 85, bottom: 25 },
       headStyles: { 
         fillColor: [16, 185, 129],
         textColor: [255, 255, 255],
-        fontSize: isCompact ? 9 : 10,
+        fontSize: style.tableHeadFontSize,
         fontStyle: 'bold',
         halign: 'center'
       },
@@ -253,7 +339,7 @@ function buildPdfDocument(
         3: { halign: 'center' },
         4: { halign: 'right' }
       },
-      styles: { fontSize: isCompact ? 8 : 9, cellPadding: isCompact ? 2 : 3 }
+      styles: { fontSize: style.tableBodyFontSize, cellPadding: style.tableCellPadding }
     });
 
     const finalY = (doc as any).lastAutoTable.finalY + 10;
@@ -279,10 +365,10 @@ function buildPdfDocument(
 
       const amountText = `${amountInLetters.toUpperCase()} DIRHAMS${centsInLetters.toUpperCase()}.`;
       const amountLines = doc.splitTextToSize(amountText, isCompact ? 175 : 180) as string[];
-      const amountLineHeight = isCompact ? 4 : 4.4;
-      const boxHeight = isCompact ? 22 : 26;
-      const phraseOffset = boxHeight + (isCompact ? 4 : 5);
-      const amountOffset = phraseOffset + (isCompact ? 5 : 6);
+      const amountLineHeight = style.amountLineHeight;
+      const boxHeight = style.totalsBoxHeight;
+      const phraseOffset = boxHeight + style.phraseGap;
+      const amountOffset = phraseOffset + style.amountGap;
       const neededEndY = finalY + amountOffset + Math.max(0, amountLines.length - 1) * amountLineHeight;
       // Retry once in compact mode to keep totals + amount on same page as table.
       if (neededEndY > contentBottomLimitY && !isCompact) {
@@ -298,28 +384,28 @@ function buildPdfDocument(
       doc.setFillColor(250, 250, 250);
       doc.rect(130, sectionY - 5, 65, boxHeight, 'FD');
 
-      doc.setFontSize(isCompact ? 9 : 10);
+      doc.setFontSize(style.totalsLabelFontSize);
       doc.setTextColor(40);
       doc.setFont("helvetica", "normal");
-      doc.text(`Total HT:`, 135, sectionY + (isCompact ? 1 : 2));
-      doc.text(`${totalExclTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 1 : 2), { align: 'right' });
+      doc.text(`Total HT:`, 135, sectionY + style.totalsY1);
+      doc.text(`${totalExclTax.toFixed(2)} MAD`, 190, sectionY + style.totalsY1, { align: 'right' });
 
-      doc.text(`TVA:`, 135, sectionY + (isCompact ? 7 : 8));
-      doc.text(`${totalTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 7 : 8), { align: 'right' });
+      doc.text(`TVA:`, 135, sectionY + style.totalsY2);
+      doc.text(`${totalTax.toFixed(2)} MAD`, 190, sectionY + style.totalsY2, { align: 'right' });
 
-      doc.setFontSize(isCompact ? 10 : 11);
+      doc.setFontSize(style.totalsValueFontSize);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(16, 185, 129);
-      doc.text(`Total TTC:`, 135, sectionY + (isCompact ? 13 : 15));
-      doc.text(`${totalInclTax.toFixed(2)} MAD`, 190, sectionY + (isCompact ? 13 : 15), { align: 'right' });
+      doc.text(`Total TTC:`, 135, sectionY + style.totalsY3);
+      doc.text(`${totalInclTax.toFixed(2)} MAD`, 190, sectionY + style.totalsY3, { align: 'right' });
 
-      doc.setFontSize(isCompact ? 8 : 9);
+      doc.setFontSize(style.amountFontSize);
       doc.setTextColor(40);
       doc.setFont("helvetica", "bold");
       doc.text(phrasePrefix, margin, sectionY + phraseOffset);
       doc.text(amountLines, margin, sectionY + amountOffset);
     } else {
-      doc.setFontSize(10);
+      doc.setFontSize(style.signatureFontSize);
       doc.setTextColor(40);
       doc.setFont("helvetica", "bold");
       let signatureY = finalY + 10;
@@ -334,28 +420,13 @@ function buildPdfDocument(
       doc.rect(125, signatureY + 12, 70, 30);
     }
 
-    // Footer with Dynamic Company Details (sans libellés par défaut type « SA COMPANY »)
-    doc.setDrawColor(230);
-    doc.line(margin, 275, 195, 275);
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    let footerY = 280;
-    if (cName) {
-      doc.setFont("helvetica", "bold");
-      doc.text(cName, 105, footerY, { align: 'center' });
-      footerY += 5;
-    }
-    doc.setFont("helvetica", "normal");
-    const footerInfo = buildFooterInfoLine(companyInfo);
-    if (footerInfo) {
-      doc.text(footerInfo, 105, footerY, { align: 'center', maxWidth: 180 });
-      footerY += 5;
-    }
-    if (footerLegalExtra) {
-      doc.setFontSize(7);
-      doc.setTextColor(80);
-      doc.text(footerLegalExtra, 105, footerY + 2, { align: 'center', maxWidth: 180 });
-    }
+  // Draw the same header/footer on all pages.
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    drawPdfHeader(doc, title, data, entity, companyInfo, margin);
+    drawPdfFooter(doc, companyInfo, margin);
+  }
 
     const docNum = data.invoiceNumber || data.noteNumber || data.orderNumber || data.quoteNumber;
     const fileName = `${title}_${docNum}_${entity.name.replace(/\s+/g, '_').toUpperCase()}.pdf`;
