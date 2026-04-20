@@ -93,7 +93,7 @@ function inferPdfLogoMode(companyInfo: {
 function addLogoTextBlock(doc: jsPDF, text: string, margin: number): void {
   const t = text.trim();
   if (!t) return;
-  doc.setFontSize(24);
+  doc.setFontSize(18);
   doc.setTextColor(30, 58, 138);
   doc.setFont('helvetica', 'bold');
   const lines = doc.splitTextToSize(t, 110);
@@ -135,19 +135,19 @@ function drawPdfHeader(doc: jsPDF, title: string, data: any, entity: any, compan
   } else {
     const logoOk = addLogoImage(doc, logoDataUrl, margin);
     if (!logoOk && cName) {
-      doc.setFontSize(24);
+      doc.setFontSize(18);
       doc.setTextColor(30, 58, 138);
       doc.setFont('helvetica', 'bold');
       doc.text(cName, margin, 20);
     }
   }
 
-  doc.setFontSize(18);
+  doc.setFontSize(15);
   doc.setTextColor(16, 185, 129);
   doc.setFont('helvetica', 'bold');
   doc.text(title, 195, 20, { align: 'right' });
 
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setTextColor(100);
   doc.setFont('helvetica', 'normal');
   doc.text(`Date: ${data.date}`, 195, 30, { align: 'right' });
@@ -158,7 +158,7 @@ function drawPdfHeader(doc: jsPDF, title: string, data: any, entity: any, compan
   doc.setDrawColor(230);
   doc.line(margin, 40, 195, 40);
 
-  doc.setFontSize(11);
+  doc.setFontSize(10);
   doc.setTextColor(40);
   doc.setFont('helvetica', 'bold');
   doc.text(
@@ -167,7 +167,7 @@ function drawPdfHeader(doc: jsPDF, title: string, data: any, entity: any, compan
     50
   );
 
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text(`${entity.name}`, margin, 57);
   if (entity.taxNumber) doc.text(`ICE: ${entity.taxNumber}`, margin, 63);
@@ -284,6 +284,8 @@ function buildPdfDocument(
 ): { doc: jsPDF; filename: string } {
   const doc = new jsPDF();
   const margin = 15;
+  const contentStartY = 85;
+  const nextPageContentStartY = 90;
   const isBL = title === 'BON DE LIVRAISON';
   const isCompact = layoutMode === 'compact';
   const style = getPdfLayoutStyle(layoutMode);
@@ -317,7 +319,7 @@ function buildPdfDocument(
     }
 
     autoTable(doc, {
-      startY: 85,
+      startY: contentStartY,
       head: [tableColumn],
       body: tableRows,
       theme: 'grid',
@@ -377,7 +379,7 @@ function buildPdfDocument(
       let sectionY = finalY;
       if (neededEndY > contentBottomLimitY) {
         doc.addPage();
-        sectionY = 20;
+        sectionY = nextPageContentStartY;
       }
 
       doc.setDrawColor(200);
@@ -411,7 +413,7 @@ function buildPdfDocument(
       let signatureY = finalY + 10;
       if (signatureY + 42 > contentBottomLimitY) {
         doc.addPage();
-        signatureY = 35;
+        signatureY = nextPageContentStartY;
       }
       doc.text(`Fait à Kenitra, le ${data.date}`, margin, signatureY);
       doc.text("Cachet et Signature du Client:", margin, signatureY + 7);

@@ -271,7 +271,8 @@ const Quotes = () => {
             });
             if (!isAccountant) setIsModalOpen(true);
           }}
-          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold"
+          disabled={isAccountant}
+          className="flex items-center space-x-2 bg-emerald-600 text-white px-6 py-2.5 rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus className="w-5 h-5" />
           <span>Nouveau Devis</span>
@@ -346,25 +347,36 @@ const Quotes = () => {
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end space-x-1">
-                        {quote.status !== 'invoiced' && (
-                          <>
-                            <button onClick={() => handleOpenEditModal(quote)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Modifier">
-                              <Edit2 className="w-5 h-5" />
-                            </button>
-                            <button onClick={() => handleConvertToInvoice(quote.id)} className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all" title="Convertir en Facture">
-                              <RefreshCw className="w-5 h-5" />
-                            </button>
-                          </>
-                        )}
-                        {!isAccountant && quote.status === 'invoiced' && (
+                        {!isAccountant ? (
                           <button
+                            type="button"
+                            onClick={() => void handleOpenEditModal(quote)}
+                            className="p-2 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-xl transition-all"
+                            title="Modifier le devis (PDF)"
+                          >
+                            <Edit2 className="w-5 h-5" />
+                          </button>
+                        ) : null}
+                        {quote.status !== 'invoiced' && !isAccountant ? (
+                          <button
+                            type="button"
+                            onClick={() => handleConvertToInvoice(quote.id)}
+                            className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all"
+                            title="Convertir en Facture"
+                          >
+                            <RefreshCw className="w-5 h-5" />
+                          </button>
+                        ) : null}
+                        {!isAccountant && quote.status === 'invoiced' ? (
+                          <button
+                            type="button"
                             onClick={() => void handleReopenQuote(quote)}
                             className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all"
                             title="Remettre en attente"
                           >
                             <History className="w-5 h-5" />
                           </button>
-                        )}
+                        ) : null}
                         <button onClick={() => handleDownloadPDF(quote)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Télécharger PDF">
                           <Download className="w-5 h-5" />
                         </button>
@@ -396,13 +408,25 @@ const Quotes = () => {
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <h2 className="text-xl font-black text-slate-800 flex items-center space-x-2">
                 <FileText className="w-6 h-6 text-blue-600" />
-                <span>{editingQuote ? 'Modifier le Devis' : 'Nouveau Devis'}</span>
+                <span>{editingQuote ? `Modifier ${editingQuote.quoteNumber}` : 'Nouveau Devis'}</span>
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingQuote(null);
+                  setIsModalOpen(false);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+              {editingQuote?.status === 'invoiced' ? (
+                <p className="rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-xs font-bold text-amber-900">
+                  Ce devis est marqué « Facturé ». Vous pouvez modifier le contenu du PDF ; la facture déjà créée ne sera pas mise à jour automatiquement.
+                </p>
+              ) : null}
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">Client</label>
@@ -463,10 +487,19 @@ const Quotes = () => {
               </div>
 
               <div className="pt-6 flex space-x-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all">Annuler</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingQuote(null);
+                    setIsModalOpen(false);
+                  }}
+                  className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
+                >
+                  Annuler
+                </button>
                 <button type="submit" className="flex-1 px-4 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all flex items-center justify-center space-x-2">
                   <Save className="w-4 h-4" />
-                  <span>Enregistrer</span>
+                  <span>{editingQuote ? 'Enregistrer les modifications' : 'Créer le devis'}</span>
                 </button>
               </div>
             </form>
