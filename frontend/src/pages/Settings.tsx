@@ -15,7 +15,6 @@ type AdminUserRow = {
 
 const defaultKeys = [
   ['invoice', 'Facture standard'],
-  ['invoiceTab', 'Facture (carnet)'],
   ['invoiceDevis', 'Facture depuis devis'],
   ['invoiceConv', 'Facture depuis BL'],
   ['bl', 'Bon de livraison'],

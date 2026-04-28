@@ -157,7 +157,7 @@ export const closeTabsForClient = async (req: Request, res: Response) => {
     if (!invoiceResult) throw new Error('Erreur lors de la création de la facture.');
 
     const cfg = await getMainConfig();
-    await assignSequentialInvoiceNumberToRow(invoiceResult.id, cfg.numbering.invoiceTab);
+    await assignSequentialInvoiceNumberToRow(invoiceResult.id, cfg.numbering.invoice);
 
     for (const item of processedItems) {
       await db.insert(invoiceItems).values({

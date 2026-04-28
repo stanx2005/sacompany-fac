@@ -47,7 +47,8 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await api.get('/stats');
+        setLoading(true);
+        const response = await api.get('/stats', { params: { timeframe } });
         setStats({
           totalSales: Number(response.data.totalSales || 0),
           totalPurchases: Number(response.data.totalPurchases || 0),
@@ -70,7 +71,7 @@ const Dashboard = () => {
       }
     };
     fetchStats();
-  }, []);
+  }, [timeframe]);
 
   const getProcessedData = () => {
     const combinedMap: any = {};
@@ -87,9 +88,7 @@ const Dashboard = () => {
     let data = Object.values(combinedMap).sort((a: any, b: any) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
-    if (timeframe === 'week') return data.slice(-7);
-    if (timeframe === 'month') return data.slice(-30);
-    return data.slice(-10);
+    return data;
   };
 
   const chartData = getProcessedData();
