@@ -350,16 +350,25 @@ export const createInvoice = async (req: Request, res: Response) => {
     const uid = (req as { user?: { id: number } }).user?.id;
     await logActivity(uid, 'create', 'invoice', result.id, { invoiceNumber });
 
-    for (const item of processedItems) {
-      await db.insert(invoiceItems).values({
-        invoiceId: result.id,
-        productId: Number(item.productId || 0),
-        quantity: Number(item.quantity || 0),
-        unitPrice: Number(item.unitPrice || 0),
-        taxRate: Number(item.taxRate || 20),
-        totalLine: Number(item.totalLine || 0),
-        date: item.date
-      } as any);
+    type ProcessedLine = {
+      productId: number;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number;
+      totalLine: number;
+      date: string | null;
+    };
+    const rows = (processedItems as ProcessedLine[]).map((item) => ({
+      invoiceId: result.id,
+      productId: Number(item.productId || 0),
+      quantity: Number(item.quantity || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      taxRate: Number(item.taxRate || 20),
+      totalLine: Number(item.totalLine || 0),
+      date: item.date,
+    }));
+    if (rows.length > 0) {
+      await db.insert(invoiceItems).values(rows as any);
     }
     res.status(201).json({ message: 'Facture créée.', id: result.id });
   } catch (error) {
@@ -400,29 +409,34 @@ export const updateInvoice = async (req: Request, res: Response) => {
     });
     const totalInclTax = totalExclTax + totalTax;
 
-    await db
-      .update(salesInvoices)
-      .set({
-        clientId: Number(clientId || 0),
-        date: String(date || ''),
-        totalExclTax: Number(totalExclTax),
-        totalTax: Number(totalTax),
-        totalInclTax: Number(totalInclTax),
-      })
-      .where(eq(salesInvoices.id, invoiceId));
+    const rows = processedItems.map((item) => ({
+      invoiceId,
+      productId: Number(item.productId || 0),
+      quantity: Number(item.quantity || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      taxRate: Number(item.taxRate || 20),
+      totalLine: Number(item.totalLine || 0),
+      date: item.date,
+    }));
 
-    await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
-    for (const item of processedItems) {
-      await db.insert(invoiceItems).values({
-        invoiceId,
-        productId: Number(item.productId || 0),
-        quantity: Number(item.quantity || 0),
-        unitPrice: Number(item.unitPrice || 0),
-        taxRate: Number(item.taxRate || 20),
-        totalLine: Number(item.totalLine || 0),
-        date: item.date,
-      } as any);
-    }
+    await db.transaction(async (tx) => {
+      await tx
+        .update(salesInvoices)
+        .set({
+          clientId: Number(clientId || 0),
+          date: String(date || ''),
+          totalExclTax: Number(totalExclTax),
+          totalTax: Number(totalTax),
+          totalInclTax: Number(totalInclTax),
+        })
+        .where(eq(salesInvoices.id, invoiceId));
+
+      await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+
+      if (rows.length > 0) {
+        await tx.insert(invoiceItems).values(rows as any);
+      }
+    });
 
     const uid = (req as { user?: { id: number } }).user?.id;
     await logActivity(uid, 'update', 'invoice', invoiceId, { invoiceNumber: existing.invoiceNumber });

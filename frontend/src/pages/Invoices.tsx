@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../services/api';
 import {
   Plus,
@@ -63,6 +63,22 @@ function invoiceCalendarDay(dateStr: string): string {
   return `${y}-${mo}-${da}`;
 }
 
+type InvoiceFormItem = {
+  lineKey: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number;
+};
+
+const newInvoiceLine = (): InvoiceFormItem => ({
+  lineKey: `line-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+  productId: '',
+  quantity: 1,
+  unitPrice: 0,
+  taxRate: 20,
+});
+
 const Invoices = () => {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
@@ -88,10 +104,14 @@ const Invoices = () => {
   /** Empty = all dates; otherwise filter factures to this calendar day (YYYY-MM-DD). */
   const [filterByDate, setFilterByDate] = useState('');
 
+  /** Line count when the invoice modal was opened (for save confirmation after add/remove). */
+  const initialInvoiceLineCountRef = useRef<number | null>(null);
+  const [invoiceSaving, setInvoiceSaving] = useState(false);
+
   const [formData, setFormData] = useState({
     clientId: '',
     date: new Date().toISOString().split('T')[0],
-    items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
+    items: [newInvoiceLine()],
   });
   const [isCreateClientOpen, setIsCreateClientOpen] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
@@ -250,46 +270,103 @@ const Invoices = () => {
   };
 
   const handleAddItem = () => {
-    setFormData({
-      ...formData,
-      items: [...formData.items, { productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
+    if (!window.confirm('Ajouter une ligne d’article à cette facture ?')) return;
+    setFormData((prev) => ({
+      ...prev,
+      items: [...prev.items, newInvoiceLine()],
+    }));
+  };
+
+  const handleRemoveItem = (index: number) => {
+    if (!window.confirm('Retirer cette ligne de la facture ?')) return;
+    setFormData((prev) => {
+      const next = prev.items.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        items: next.length ? next : [newInvoiceLine()],
+      };
     });
   };
 
   const handleItemChange = (index: number, field: string, value: any) => {
-    const newItems = [...formData.items];
-    if (field === 'productId') {
-      const product = products.find(p => p.id === parseInt(value));
-      if (product) {
-        newItems[index] = { 
-          ...newItems[index], 
-          productId: value, 
-          unitPrice: product.price,
-          taxRate: product.taxRate 
-        };
+    setFormData((prev) => {
+      const newItems = [...prev.items];
+      if (field === 'productId') {
+        const product = products.find((p) => p.id === parseInt(String(value), 10));
+        if (product) {
+          newItems[index] = {
+            ...newItems[index],
+            productId: value,
+            unitPrice: product.price,
+            taxRate: product.taxRate,
+          };
+        } else {
+          newItems[index] = { ...newItems[index], [field]: value };
+        }
       } else {
         newItems[index] = { ...newItems[index], [field]: value };
       }
-    } else {
-      newItems[index] = { ...newItems[index], [field]: value };
-    }
-    setFormData({ ...formData, items: newItems });
+      return { ...prev, items: newItems };
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isAccountant) return;
+    if (isAccountant) {
+      alert('Les comptables ne peuvent pas modifier les factures.');
+      return;
+    }
+    if (invoiceSaving) return;
+
+    if (!formData.clientId) {
+      alert('Veuillez sélectionner un client.');
+      return;
+    }
+    if (formData.items.length === 0) {
+      alert('Au moins une ligne d’article est requise.');
+      return;
+    }
+    for (let i = 0; i < formData.items.length; i++) {
+      const row = formData.items[i];
+      const pid = parseInt(String(row.productId), 10);
+      if (!row.productId || Number.isNaN(pid) || pid < 1) {
+        alert(`Ligne ${i + 1} : veuillez choisir un produit.`);
+        return;
+      }
+      const qty = parseInt(String(row.quantity), 10);
+      if (Number.isNaN(qty) || qty < 1) {
+        alert(`Ligne ${i + 1} : quantité invalide (minimum 1).`);
+        return;
+      }
+      const unit = parseFloat(String(row.unitPrice));
+      if (Number.isNaN(unit) || unit < 0) {
+        alert(`Ligne ${i + 1} : prix HT invalide.`);
+        return;
+      }
+    }
+
+    const initialCount = initialInvoiceLineCountRef.current;
+    if (initialCount !== null && formData.items.length !== initialCount) {
+      if (
+        !window.confirm(
+          'Le nombre de lignes d’articles a changé (ajout ou suppression). Confirmer l’enregistrement ?'
+        )
+      ) {
+        return;
+      }
+    }
+
     try {
+      setInvoiceSaving(true);
       const payload = {
         ...formData,
-        clientId: parseInt(formData.clientId),
-        items: formData.items.map(item => ({
-          ...item,
-          productId: parseInt(item.productId),
-          quantity: parseInt(item.quantity.toString()),
-          unitPrice: parseFloat(item.unitPrice.toString()),
-          taxRate: parseFloat(item.taxRate.toString())
-        }))
+        clientId: parseInt(formData.clientId, 10),
+        items: formData.items.map((item) => ({
+          productId: parseInt(String(item.productId), 10),
+          quantity: parseInt(String(item.quantity), 10),
+          unitPrice: parseFloat(String(item.unitPrice)),
+          taxRate: parseFloat(String(item.taxRate)),
+        })),
       };
       if (editingInvoice) {
         await api.put(`/invoices/${editingInvoice.id}`, payload);
@@ -298,9 +375,26 @@ const Invoices = () => {
       }
       setIsModalOpen(false);
       setEditingInvoice(null);
+      initialInvoiceLineCountRef.current = null;
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur:', error);
+      const code = error?.code as string | undefined;
+      const serverMsg = error?.response?.data?.message as string | undefined;
+      let msg =
+        serverMsg ||
+        error?.message ||
+        'Erreur lors de l’enregistrement. Vérifiez la connexion et réessayez.';
+      if (code === 'ECONNABORTED' || /timeout/i.test(String(error?.message))) {
+        msg =
+          'Délai dépassé sans réponse du serveur. Vérifiez les logs Render au moment du clic, que VITE_API_URL pointe bien vers votre API (https://…/api), puis réessayez. Vous pouvez augmenter VITE_API_TIMEOUT_MS (ex. 300000 pour 5 min) si besoin.';
+      } else if (code === 'ERR_NETWORK' && !serverMsg) {
+        msg =
+          'Impossible de joindre l’API (réseau ou CORS). Vérifiez VITE_API_URL au build et que le backend autorise votre domaine.';
+      }
+      alert(msg);
+    } finally {
+      setInvoiceSaving(false);
     }
   };
 
@@ -308,16 +402,18 @@ const Invoices = () => {
     if (isAccountant) return;
     try {
       const { data } = await api.get(`/invoices/${invoice.id}/items`);
-      const mappedItems = (Array.isArray(data) ? data : []).map((it: any) => ({
+      const mappedItems: InvoiceFormItem[] = (Array.isArray(data) ? data : []).map((it: any) => ({
+        lineKey: String(it.id ?? `line-${Math.random().toString(36).slice(2)}`),
         productId: String(it.productId || ''),
         quantity: Number(it.quantity || 1),
         unitPrice: Number(it.unitPrice || 0),
         taxRate: Number(it.taxRate || 20),
       }));
+      initialInvoiceLineCountRef.current = mappedItems.length;
       setFormData({
         clientId: String(invoice.clientId || ''),
         date: invoiceCalendarDay(invoice.date) || new Date().toISOString().split('T')[0],
-        items: mappedItems.length ? mappedItems : [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }],
+        items: mappedItems.length ? mappedItems : [newInvoiceLine()],
       });
       setEditingInvoice(invoice);
       setIsModalOpen(true);
@@ -402,6 +498,26 @@ const Invoices = () => {
     return { filteredInvoices: sorted, listTotals };
   }, [invoices, searchTerm, sortMode, filterByDate]);
 
+  /** Draft totals from the invoice modal lines (same logic as server: HT, TVA, TTC). */
+  const invoiceFormDraftTotals = useMemo(() => {
+    let totalHt = 0;
+    let totalTva = 0;
+    for (const item of formData.items) {
+      const qty = parseFloat(String(item.quantity));
+      const price = parseFloat(String(item.unitPrice));
+      const taxRate = parseFloat(String(item.taxRate));
+      if (!Number.isFinite(qty) || !Number.isFinite(price) || !Number.isFinite(taxRate)) continue;
+      const lineHt = qty * price;
+      totalHt += lineHt;
+      totalTva += lineHt * (taxRate / 100);
+    }
+    return {
+      totalHt,
+      totalTva,
+      totalTtc: totalHt + totalTva,
+    };
+  }, [formData.items]);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -413,10 +529,11 @@ const Invoices = () => {
           onClick={() => {
             if (!isAccountant) {
               setEditingInvoice(null);
+              initialInvoiceLineCountRef.current = 1;
               setFormData({
                 clientId: '',
                 date: new Date().toISOString().split('T')[0],
-                items: [{ productId: '', quantity: 1, unitPrice: 0, taxRate: 20 }]
+                items: [newInvoiceLine()],
               });
               setIsModalOpen(true);
             }
@@ -741,9 +858,11 @@ const Invoices = () => {
                 <span>{editingInvoice ? `Modifier ${editingInvoice.invoiceNumber}` : 'Nouvelle Facture'}</span>
               </h2>
               <button
+                type="button"
                 onClick={() => {
                   setIsModalOpen(false);
                   setEditingInvoice(null);
+                  initialInvoiceLineCountRef.current = null;
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -784,7 +903,7 @@ const Invoices = () => {
                 
                 <div className="space-y-3">
                   {formData.items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-12 gap-4 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                    <div key={item.lineKey} className="grid grid-cols-12 gap-4 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
                       <div className="col-span-5">
                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Produit</label>
                         <select required className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-700" value={item.productId} onChange={(e) => handleItemChange(index, 'productId', e.target.value)}>
@@ -801,7 +920,11 @@ const Invoices = () => {
                         <input type="number" step="0.01" required className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-700" value={item.unitPrice} onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)} />
                       </div>
                       <div className="col-span-2 text-right">
-                        <button type="button" onClick={() => setFormData({ ...formData, items: formData.items.filter((_, i) => i !== index) })} className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(index)}
+                          className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                        >
                           <X className="w-5 h-5" />
                         </button>
                       </div>
@@ -810,20 +933,59 @@ const Invoices = () => {
                 </div>
               </div>
 
-              <div className="pt-6 flex space-x-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5 sm:py-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                  Montant total (aperçu)
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between">
+                  <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm text-slate-600">
+                    <span>
+                      HT{' '}
+                      <span className="font-bold text-slate-800">
+                        {invoiceFormDraftTotals.totalHt.toFixed(2)} MAD
+                      </span>
+                    </span>
+                    <span>
+                      TVA{' '}
+                      <span className="font-bold text-slate-800">
+                        {invoiceFormDraftTotals.totalTva.toFixed(2)} MAD
+                      </span>
+                    </span>
+                  </div>
+                  <div className="text-right sm:text-right">
+                    <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Total TTC</span>
+                    <p className="text-xl font-black tracking-tight text-emerald-600 sm:text-2xl">
+                      {invoiceFormDraftTotals.totalTtc.toFixed(2)} MAD
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 flex space-x-4">
                 <button
                   type="button"
                   onClick={() => {
                     setIsModalOpen(false);
                     setEditingInvoice(null);
+                    initialInvoiceLineCountRef.current = null;
                   }}
                   className="flex-1 px-4 py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-50 transition-all"
                 >
                   Annuler
                 </button>
-                <button type="submit" className="flex-1 px-4 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all flex items-center justify-center space-x-2">
+                <button
+                  type="submit"
+                  disabled={invoiceSaving}
+                  className="flex-1 px-4 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all flex items-center justify-center space-x-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   <Save className="w-4 h-4" />
-                  <span>{editingInvoice ? 'Enregistrer les modifications' : 'Générer la Facture'}</span>
+                  <span>
+                    {invoiceSaving
+                      ? 'Enregistrement…'
+                      : editingInvoice
+                        ? 'Enregistrer les modifications'
+                        : 'Générer la Facture'}
+                  </span>
                 </button>
               </div>
             </form>
